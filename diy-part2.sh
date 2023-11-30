@@ -14,16 +14,20 @@
 sed -i 's/192.168.1.1/192.168.2.1/g' package/base-files/files/bin/config_generate
 
 Arch="amd64"
-CPU_MODEL="${Arch}"
+CPU_MODEL="${Arch}-v3"
+CLASH_META_VERSION="$(curl --retry 5 https://api.github.com/repos/MetaCubeX/Clash.Meta/releases/latest 2>/dev/null|grep -E 'tag_name' |grep -E 'v[0-9.]+' -o 2>/dev/null)"
 
 rm -rf feeds/luci/themes/luci-theme-argon
 git clone --depth 1 -b 18.06 https://github.com/jerrykuku/luci-theme-argon.git feeds/luci/themes/luci-theme-argon
 
-rm -rf feeds/packages/net/smartdns
-svn co https://github.com/immortalwrt/packages/branches/openwrt-18.06/net/smartdns feeds/packages/net/smartdns
+# rm -rf feeds/packages/net/smartdns
+# svn co https://github.com/immortalwrt/packages/branches/openwrt-18.06/net/smartdns feeds/packages/net/smartdns
+mkdir -p feeds/packages/net/smartdns/conf
+sed -i 's/PKG_BUILD_DIR)\/package\/openwrt\/custom.conf/CURDIR)\/conf\/custom.conf/g' feeds/packages/net/smartdns/Makefile
+sed -i 's/PKG_BUILD_DIR)\/package\/openwrt\/files\/etc\/config\/smartdns/CURDIR)\/conf\/smartdns.conf/g' feeds/packages/net/smartdns/Makefile
 
-rm -rf feeds/packages/net/zerotier
-svn co https://github.com/immortalwrt/packages/branches/openwrt-18.06/net/zerotier feeds/packages/net/zerotier
+# rm -rf feeds/packages/net/zerotier
+# svn co https://github.com/immortalwrt/packages/branches/openwrt-18.06/net/zerotier feeds/packages/net/zerotier
 
 cp $GITHUB_WORKSPACE/scripts/check_smartdns_connect.sh package/base-files/files/etc
 cp $GITHUB_WORKSPACE/scripts/check_openclash_connect.sh package/base-files/files/etc
@@ -61,10 +65,8 @@ config openclash 'config'
 	option auto_update '0'
 	option auto_update_time '0'
 	option cn_port '9090'
-	option dashboard_password 'openwrt'
 	option ipv6_enable '0'
 	option ipv6_dns '0'
-	option core_version 'linux-${CPU_MODEL}'
 	option release_branch 'dev'
 	option en_mode 'redir-host'
 	option servers_if_update '0'
@@ -73,7 +75,6 @@ config openclash 'config'
 	option proxy_mode 'rule'
 	option lan_ac_mode '0'
 	option operation_mode 'redir-host'
-	option redirect_dns '1'
 	option small_flash_memory '0'
 	option interface_name '0'
 	option log_size '1024'
@@ -83,27 +84,22 @@ config openclash 'config'
 	option append_wan_dns '0'
 	option stream_domains_prefetch '0'
 	option stream_auto_select '0'
-	option geo_custom_url 'https://cdn.jsdelivr.net/gh/alecthw/mmdb_china_ip_list@release/lite/Country.mmdb'
 	option chnr6_custom_url 'https://ispip.clang.cn/all_cn_ipv6.txt'
 	option enable_udp_proxy '1'
 	option disable_udp_quic '0'
 	option enable_rule_proxy '1'
-	option common_ports '1'
+	option common_ports '21 22 23 53 80 123 143 194 443 465 587 853 993 995 998 2052 2053 2082 2083 2086 2095 2096 5222 5228 5229 5230 8080 8443 8880 8888 8889'
 	option china_ip_route '1'
 	option intranet_allowed '1'
 	option enable_redirect_dns '1'
 	option enable_custom_dns '1'
 	option disable_masq_cache '1'
 	option dns_advanced_setting '1'
-	option custom_domain_dns_server '127.0.0.1#6053'
 	option rule_source '1'
 	option enable_custom_clash_rules '1'
 	option other_rule_auto_update '1'
 	option other_rule_update_week_time '*'
 	option other_rule_update_day_time '2'
-	option geo_auto_update '1'
-	option geo_update_week_time '*'
-	option geo_update_day_time '3'
 	option chnr_auto_update '1'
 	option chnr_update_week_time '*'
 	option chnr_update_day_time '4'
@@ -114,15 +110,9 @@ config openclash 'config'
 	option config_path '/etc/openclash/config/config.yaml'
 	option restricted_mode '0'
 	option core_type 'Meta'
-	option create_config '1'
-	option rule_sources 'ConnersHua'
-	option mix_proxies '0'
-	option dns_remote '1'
 	option bypass_gateway_compatible '0'
 	option github_address_mod '0'
 	option delay_start '0'
-	option dnsmasq_cachesize '0'
-	option cachesize_dns '1'
 	option filter_aaaa_dns '0'
 	option router_self_proxy '1'
 	option enable_meta_core '1'
@@ -139,21 +129,39 @@ config openclash 'config'
 	option geoip_update_week_time '*'
 	option geoip_update_day_time '5'
 	option geoip_custom_url 'https://fastly.jsdelivr.net/gh/Loyalsoldier/v2ray-rules-dat@release/geoip.dat'
+	option geo_auto_update '1'
+	option geo_update_week_time '*'
+	option geo_update_day_time '3'
+	option geo_custom_url 'https://testingcf.jsdelivr.net/gh/alecthw/mmdb_china_ip_list@release/Country.mmdb'
+	option custom_name_policy '0'
 	option dashboard_forward_ssl '0'
 	option enable_http3 '1'
-	option custom_domain_dns_server '127.0.0.1#6053'
 	option dashboard_type 'Meta'
 	option yacd_type 'Meta'
 	option append_default_dns '0'
-	option default_resolvfile '/tmp/resolv.conf.d/resolv.conf.auto'
-	option enable '1'
-	option config_reload '1'
-	option urltest_address_mod '0'
-	option find_process_mode 'off'
-	option dnsmasq_resolvfile '/tmp/resolv.conf.auto'
-	option dnsmasq_noresolv '0'
+	option core_version 'linux-${CPU_MODEL}'
 	option enable_meta_sniffer_pure_ip '0'
 	option cndomain_custom_url 'https://testingcf.jsdelivr.net/gh/felixonmars/dnsmasq-china-list@master/accelerated-domains.china.conf'
+	option dashboard_password 'openwrt'
+	option custom_domain_dns_server '127.0.0.1#6053'
+	option urltest_address_mod '0'
+	option find_process_mode 'always'
+	option dnsmasq_noresolv '0'
+	option enable_custom_domain_dns_server '1'
+	option custom_host '1'
+	option global_client_fingerprint '0'
+	option create_config '1'
+	option rule_sources 'ConnersHua'
+	option mix_proxies '0'
+	option enable '1'
+	option default_resolvfile '/tmp/resolv.conf.d/resolv.conf.auto'
+	option dnsmasq_resolvfile '/tmp/resolv.conf.d/resolv.conf.auto'
+	option urltest_interval_mod '0'
+	option enable_unified_delay '1'
+	option keep_alive_interval '0'
+	option cachesize_dns '0'
+	option redirect_dns '0'
+	option config_reload '1'
 
 config dns_servers
 	option type 'udp'
@@ -491,7 +499,7 @@ config dns_servers
 	option specific_group 'Disable'
 
 config dns_servers
-	option enabled '1'
+	option enabled '0'
 	option ip '127.0.0.1'
 	option port '7053'
 	option group 'fallback'
@@ -499,22 +507,38 @@ config dns_servers
 	option node_resolve '0'
 	option interface 'Disable'
 	option specific_group 'Disable'
+
+config rule_providers
+	option enabled '1'
+	option config 'config.yaml'
+	option name 'anti-ad-white'
+	option type 'http'
+	option behavior 'domain'
+	option url 'https://raw.githubusercontent.com/privacy-protection-tools/dead-horse/master/anti-ad-white-for-clash.yaml'
+	option interval '86400'
+	option position '0'
+	option group 'DIRECT'
+
+config rule_providers
+	option enabled '1'
+	option config 'config.yaml'
+	option name 'anti-ad'
+	option type 'http'
+	option behavior 'domain'
+	option url 'https://raw.githubusercontent.com/privacy-protection-tools/anti-AD/master/anti-ad-clash.yaml'
+	option interval '86400'
+	option position '0'
+	option group 'REJECT'
 ' >package/lean/luci-app-openclash/root/etc/config/openclash
 mkdir -p package/lean/luci-app-openclash/root/etc/openclash/core
-curl --retry 5 -L https://github.com/vernesong/OpenClash/raw/core/dev/meta/clash-linux-${CPU_MODEL}.tar.gz | tar zxf -
-mv clash package/lean/luci-app-openclash/root/etc/openclash/core/clash_meta
+#curl --retry 5 -L https://github.com/vernesong/OpenClash/raw/core/dev/meta/clash-linux-${CPU_MODEL}.tar.gz | tar zxf -
+#mv clash package/lean/luci-app-openclash/root/etc/openclash/core/clash_meta
+curl --retry 5 -L https://github.com/MetaCubeX/Clash.Meta/releases/download/${CLASH_META_VERSION}/clash.meta-linux-amd64-${CLASH_META_VERSION}.gz -O
+gzip -d clash.meta-linux-amd64-${CLASH_META_VERSION}.gz
+mv clash.meta-linux-amd64-${CLASH_META_VERSION} package/lean/luci-app-openclash/root/etc/openclash/core/clash_meta
 chmod +x package/lean/luci-app-openclash/root/etc/openclash/core/clash_meta
 curl --retry 5 -L https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download/geoip.dat -o package/lean/luci-app-openclash/root/etc/openclash/GeoIP.dat
 
-SMARTDNS_BRANCH=master
-if [ ! -e $GITHUB_WORKSPACE/smartdns ]; then
-  git clone --depth 1 https://github.com/pymumu/smartdns.git $GITHUB_WORKSPACE/smartdns
-else
-  pushd $GITHUB_WORKSPACE/smartdns
-  git pull origin $SMARTDNS_BRANCH
-  git reset --hard origin/$SMARTDNS_BRANCH
-  popd
-fi
 echo '
 config smartdns
 	option server_name 'smartdns'
@@ -523,7 +547,6 @@ config smartdns
 	option dualstack_ip_selection '0'
 	option prefetch_domain '1'
 	option serve_expired '1'
-	option redirect 'none'
 	option seconddns_port '7053'
 	option seconddns_no_rule_addr '0'
 	option seconddns_no_rule_nameserver '0'
@@ -539,6 +562,18 @@ config smartdns
 	option seconddns_tcp_server '1'
 	option seconddns_no_cache '1'
 	option seconddns_no_speed_check '1'
+	option auto_set_dnsmasq '0'
+	option speed_check_mode 'ping,tcp:80,tcp:443'
+	option response_mode 'first-ping'
+	option bind_device '1'
+	option cache_persist '1'
+	option resolve_local_hostnames '1'
+	option force_https_soa '1'
+	option rr_ttl_min '600'
+	option seconddns_force_aaaa_soa '1'
+	option enable_auto_update '1'
+	list conf_files 'anti-ad-white.conf'
+	list conf_files 'anti-ad.conf'
 
 config server
 	option type 'udp'
@@ -546,7 +581,7 @@ config server
 	option server_group 'foreign'
 	option blacklist_ip '0'
 	option addition_arg '-exclude-default-group'
-	option enabled '0'
+	option enabled '1'
 
 config server
 	option type 'udp'
@@ -562,7 +597,7 @@ config server
 	option server_group 'foreign'
 	option blacklist_ip '0'
 	option addition_arg '-exclude-default-group'
-	option enabled '0'
+	option enabled '1'
 
 config server
 	option ip '1.0.0.1'
@@ -591,12 +626,12 @@ config server
 config server
 	option type 'udp'
 	option ip '119.29.29.29'
-	option enabled '0'
+	option enabled '1'
 
 config server
 	option type 'udp'
 	option ip '223.5.5.5'
-	option enabled '0'
+	option enabled '1'
 
 config server
 	option type 'udp'
@@ -609,7 +644,7 @@ config server
 	option server_group 'foreign'
 	option blacklist_ip '0'
 	option addition_arg '-exclude-default-group'
-	option enabled '1'
+	option enabled '0'
 
 config server
 	option ip '8.8.4.4'
@@ -625,7 +660,7 @@ config server
 	option server_group 'foreign'
 	option blacklist_ip '0'
 	option addition_arg '-exclude-default-group'
-	option enabled '1'
+	option enabled '0'
 
 config server
 	option ip '1.0.0.1'
@@ -652,7 +687,7 @@ config server
 	option addition_arg '-exclude-default-group'
 
 config server
-	option enabled '1'
+	option enabled '0'
 	option ip '119.29.29.29'
 	option type 'tcp'
 
@@ -674,7 +709,7 @@ config server
 	option blacklist_ip '0'
 	option host_name 'dns.google'
 	option addition_arg '-exclude-default-group'
-	option enabled '1'
+	option enabled '0'
 
 config server
 	option ip '8.8.4.4'
@@ -694,7 +729,7 @@ config server
 	option blacklist_ip '0'
 	option host_name '1dot1dot1dot1.cloudflare-dns.com'
 	option addition_arg '-exclude-default-group'
-	option enabled '1'
+	option enabled '0'
 
 config server
 	option ip '1.0.0.1'
@@ -710,13 +745,13 @@ config server
 	option ip 'dot.pub'
 	option type 'tls'
 	option no_check_certificate '0'
-	option enabled '1'
+	option enabled '0'
 
 config server
 	option ip '1.12.12.12'
 	option type 'tls'
 	option no_check_certificate '0'
-	option enabled '1'
+	option enabled '0'
 
 config server
 	option ip '120.53.53.53'
@@ -747,7 +782,7 @@ config server
 	option host_name '1dot1dot1dot1.cloudflare-dns.com'
 	option http_host '1dot1dot1dot1.cloudflare-dns.com'
 	option addition_arg '-exclude-default-group'
-	option enabled '1'
+	option enabled '0'
 
 config server
 	option ip 'https://1.0.0.1/dns-query'
@@ -769,7 +804,7 @@ config server
 	option host_name 'dns.google'
 	option http_host 'dns.google'
 	option addition_arg '-exclude-default-group'
-	option enabled '1'
+	option enabled '0'
 
 config server
 	option ip 'https://8.8.4.4/dns-query'
@@ -786,7 +821,7 @@ config server
 	option ip 'https://doh.pub/dns-query'
 	option type 'https'
 	option no_check_certificate '0'
-	option enabled '1'
+	option enabled '0'
 
 config server
 	option ip 'https://sm2.doh.pub/dns-query'
@@ -798,7 +833,7 @@ config server
 	option ip 'https://1.12.12.12/dns-query'
 	option type 'https'
 	option no_check_certificate '0'
-	option enabled '1'
+	option enabled '0'
 
 config server
 	option ip 'https://120.53.53.53/dns-query'
@@ -810,7 +845,7 @@ config server
 	option ip 'https://223.5.5.5/dns-query'
 	option type 'https'
 	option no_check_certificate '0'
-	option enabled '1'
+	option enabled '0'
 	option host_name 'dns.alidns.com'
 	option http_host 'dns.alidns.com'
 
@@ -821,15 +856,23 @@ config server
 	option enabled '0'
 	option host_name 'dns.alidns.com'
 	option http_host 'dns.alidns.com'
-' >$GITHUB_WORKSPACE/smartdns/package/openwrt/files/etc/config/smartdns
-echo '
 
-force-qtype-SOA 65
-response-mode first-ping
-speed-check-mode ping,tcp:80,tcp:443
-' >>$GITHUB_WORKSPACE/smartdns/package/openwrt/custom.conf
-cat $GITHUB_WORKSPACE/smartdns/package/openwrt/files/etc/config/smartdns >feeds/packages/net/smartdns/conf/smartdns.conf
-cat $GITHUB_WORKSPACE/smartdns/package/openwrt/custom.conf >feeds/packages/net/smartdns/conf/custom.conf
+config domain-rule
+	option no_speed_check '0'
+	option force_aaaa_soa '0'
+
+config download-file
+	option type 'config'
+	option name 'anti-ad-white.conf'
+	option url 'https://raw.githubusercontent.com/privacy-protection-tools/dead-horse/master/anti-ad-white-for-smartdns.txt'
+
+config download-file
+	option type 'config'
+	option name 'anti-ad.conf'
+	option url 'https://raw.githubusercontent.com/privacy-protection-tools/anti-AD/master/anti-ad-smartdns.conf'
+' >feeds/packages/net/smartdns/conf/smartdns.conf
+
+curl --retry 5 -L https://github.com/pymumu/smartdns/raw/master/package/openwrt/custom.conf -o feeds/packages/net/smartdns/conf/custom.conf
 
 latest_ver="$(curl --retry 5 https://api.github.com/repos/AdguardTeam/AdGuardHome/releases/latest 2>/dev/null|grep -E 'tag_name' |grep -E 'v[0-9.]+' -o 2>/dev/null)"
 curl --retry 5 -L https://github.com/AdguardTeam/AdGuardHome/releases/download/${latest_ver}/AdGuardHome_linux_${Arch}.tar.gz | tar zxf -
