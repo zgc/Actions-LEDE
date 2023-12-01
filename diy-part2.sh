@@ -15,7 +15,7 @@ sed -i 's/192.168.1.1/192.168.2.1/g' package/base-files/files/bin/config_generat
 
 Arch="amd64"
 CPU_MODEL="${Arch}-v3"
-CLASH_META_VERSION="$(curl --retry 5 https://api.github.com/repos/MetaCubeX/Clash.Meta/releases/latest 2>/dev/null|grep -E 'tag_name' |grep -E 'v[0-9.]+' -o 2>/dev/null)"
+CLASH_META_VERSION="$(curl --retry 5 -L https://api.github.com/repos/MetaCubeX/Clash.Meta/releases/latest 2>/dev/null|grep -E 'tag_name' |grep -E 'v[0-9.]+' -o 2>/dev/null)"
 
 rm -rf feeds/luci/themes/luci-theme-argon
 git clone --depth 1 -b 18.06 https://github.com/jerrykuku/luci-theme-argon.git feeds/luci/themes/luci-theme-argon
