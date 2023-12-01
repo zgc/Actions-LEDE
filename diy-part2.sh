@@ -531,10 +531,14 @@ config rule_providers
 	option group 'REJECT'
 ' >package/lean/luci-app-openclash/root/etc/config/openclash
 mkdir -p package/lean/luci-app-openclash/root/etc/openclash/core
-#curl --retry 5 -L https://github.com/vernesong/OpenClash/raw/core/dev/meta/clash-linux-${CPU_MODEL}.tar.gz | tar zxf -
-#mv clash package/lean/luci-app-openclash/root/etc/openclash/core/clash_meta
-curl --retry 5 -L https://github.com/MetaCubeX/Clash.Meta/releases/download/${CLASH_META_VERSION}/clash.meta-linux-amd64-${CLASH_META_VERSION}.gz -O
-gzip -d clash.meta-linux-amd64-${CLASH_META_VERSION}.gz
+if [ -z ${CLASH_META_VERSION} ]
+then
+  curl --retry 5 -L https://github.com/vernesong/OpenClash/raw/core/dev/meta/clash-linux-${CPU_MODEL}.tar.gz | tar zxf -
+  mv clash package/lean/luci-app-openclash/root/etc/openclash/core/clash_meta
+else
+  curl --retry 5 -L https://github.com/MetaCubeX/Clash.Meta/releases/download/${CLASH_META_VERSION}/clash.meta-linux-amd64-${CLASH_META_VERSION}.gz -O
+  gzip -d clash.meta-linux-amd64-${CLASH_META_VERSION}.gz
+fi
 mv clash.meta-linux-amd64-${CLASH_META_VERSION} package/lean/luci-app-openclash/root/etc/openclash/core/clash_meta
 chmod +x package/lean/luci-app-openclash/root/etc/openclash/core/clash_meta
 curl --retry 5 -L https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download/geoip.dat -o package/lean/luci-app-openclash/root/etc/openclash/GeoIP.dat
