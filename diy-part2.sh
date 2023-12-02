@@ -15,7 +15,7 @@ sed -i 's/192.168.1.1/192.168.2.1/g' package/base-files/files/bin/config_generat
 
 Arch="amd64"
 CPU_MODEL="${Arch}-v3"
-CLASH_META_VERSION="$(curl --retry 5 -L https://api.github.com/repos/MetaCubeX/Clash.Meta/releases/latest 2>/dev/null|grep -E 'tag_name' |grep -E 'v[0-9.]+' -o 2>/dev/null)"
+CLASH_META_VERSION="$(curl --retry 5 -L https://api.github.com/repos/MetaCubeX/mihomo/releases/latest 2>/dev/null|grep -E 'tag_name' |grep -E 'v[0-9.]+' -o 2>/dev/null)"
 
 rm -rf feeds/luci/themes/luci-theme-argon
 git clone --depth 1 -b 18.06 https://github.com/jerrykuku/luci-theme-argon.git feeds/luci/themes/luci-theme-argon
@@ -536,10 +536,10 @@ then
   curl --retry 5 -L https://github.com/vernesong/OpenClash/raw/core/dev/meta/clash-linux-${CPU_MODEL}.tar.gz | tar zxf -
   mv clash package/lean/luci-app-openclash/root/etc/openclash/core/clash_meta
 else
-  curl --retry 5 -L https://github.com/MetaCubeX/Clash.Meta/releases/download/${CLASH_META_VERSION}/clash.meta-linux-amd64-${CLASH_META_VERSION}.gz -O
-  gzip -d clash.meta-linux-amd64-${CLASH_META_VERSION}.gz
+  curl --retry 5 -L https://github.com/MetaCubeX/mihomo/releases/download/${CLASH_META_VERSION}/mihomo-linux-amd64-${CLASH_META_VERSION}.gz -O
+  gzip -d mihomo-linux-amd64-${CLASH_META_VERSION}.gz
+  mv mihomo-linux-amd64-${CLASH_META_VERSION} package/lean/luci-app-openclash/root/etc/openclash/core/clash_meta
 fi
-mv clash.meta-linux-amd64-${CLASH_META_VERSION} package/lean/luci-app-openclash/root/etc/openclash/core/clash_meta
 chmod +x package/lean/luci-app-openclash/root/etc/openclash/core/clash_meta
 curl --retry 5 -L https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download/geoip.dat -o package/lean/luci-app-openclash/root/etc/openclash/GeoIP.dat
 
