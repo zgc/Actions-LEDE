@@ -17,23 +17,53 @@
 #echo 'src-git helloworld https://github.com/fw876/helloworld' >>feeds.conf.default
 #echo 'src-git passwall https://github.com/xiaorouji/openwrt-passwall' >>feeds.conf.default
 
+IMMORTALWRT_BRANCH=openwrt-18.06
+OPENCLASH_BRANCH=dev
+
 rm -rf package/lean/luci-app-argon-config
 git clone --depth 1 -b 18.06 https://github.com/jerrykuku/luci-app-argon-config.git package/lean/luci-app-argon-config
 
 rm -rf package/lean/luci-app-filebrowser
-svn co https://github.com/immortalwrt/luci/branches/openwrt-18.06/applications/luci-app-filebrowser package/lean/luci-app-filebrowser
-sed -i "s/..\/..\/luci.mk/\$(TOPDIR)\/feeds\/luci\/luci.mk/g" package/lean/luci-app-filebrowser/Makefile
+mkdir -p package/lean/luci-app-filebrowser
+pushd package/lean/luci-app-filebrowser
+git init
+git remote add -f origin ttps://github.com/immortalwrt/luci.git
+git config core.sparsecheckout true
+echo "applications/luci-app-filebrowser" >> .git/info/sparse-checkout
+git pull --depth 1 origin $IMMORTALWRT_BRANCH
+sed -i "s/..\/..\/luci.mk/\$(TOPDIR)\/feeds\/luci\/luci.mk/g" Makefile
+popd
 rm -rf package/lean/filebrowser
-svn co https://github.com/immortalwrt/packages/branches/openwrt-18.06/utils/filebrowser package/lean/filebrowser
-sed -i "s/..\/..\/lang\/golang\/golang-package.mk/\$(TOPDIR)\/feeds\/packages\/lang\/golang\/golang-package.mk/g" package/lean/filebrowser/Makefile
+mkdir -p package/lean/filebrowser
+pushd package/lean/filebrowser
+git init
+git remote add -f origin ttps://github.com/immortalwrt/packages.git
+git config core.sparsecheckout true
+echo "utils/filebrowser" >> .git/info/sparse-checkout
+git pull --depth 1 origin $IMMORTALWRT_BRANCH
+sed -i "s/..\/..\/lang\/golang\/golang-package.mk/\$(TOPDIR)\/feeds\/packages\/lang\/golang\/golang-package.mk/g" Makefile
+popd
 
 rm -rf package/lean/luci-app-openclash
-OPENCLASH_BRANCH=dev
-svn co https://github.com/vernesong/OpenClash/branches/$OPENCLASH_BRANCH/luci-app-openclash package/lean/luci-app-openclash
+mkdir -p package/lean/luci-app-openclash
+pushd package/lean/luci-app-openclash
+git init
+git remote add -f origin https://github.com/vernesong/OpenClash.git
+git config core.sparsecheckout true
+echo "luci-app-openclash" >> .git/info/sparse-checkout
+git pull --depth 1 origin $OPENCLASH_BRANCH
+popd
 
 rm -rf package/lean/luci-app-smartdns
-svn co https://github.com/immortalwrt/luci/branches/openwrt-18.06/applications/luci-app-smartdns package/lean/luci-app-smartdns
-sed -i "s/..\/..\/luci.mk/\$(TOPDIR)\/feeds\/luci\/luci.mk/g" package/lean/luci-app-smartdns/Makefile
+mkdir -p package/lean/luci-app-smartdns
+pushd package/lean/luci-app-smartdns
+git init
+git remote add -f origin ttps://github.com/immortalwrt/luci.git
+git config core.sparsecheckout true
+echo "applications/luci-app-smartdns" >> .git/info/sparse-checkout
+git pull --depth 1 origin $IMMORTALWRT_BRANCH
+sed -i "s/..\/..\/luci.mk/\$(TOPDIR)\/feeds\/luci\/luci.mk/g" Makefile
+popd
 
 rm -rf package/lean/luci-app-adguardhome
 git clone --depth 1 -b beta https://github.com/rufengsuixing/luci-app-adguardhome.git package/lean/luci-app-adguardhome
