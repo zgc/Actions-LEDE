@@ -27,7 +27,7 @@ rm -rf package/lean/luci-app-filebrowser
 mkdir -p package/lean/luci-app-filebrowser
 pushd package/lean/luci-app-filebrowser
 git init
-git remote add -f origin ttps://github.com/immortalwrt/luci.git
+git remote add -f origin https://github.com/immortalwrt/luci.git
 git config core.sparsecheckout true
 echo "applications/luci-app-filebrowser" >> .git/info/sparse-checkout
 git pull --depth 1 origin $IMMORTALWRT_BRANCH
@@ -37,7 +37,7 @@ rm -rf package/lean/filebrowser
 mkdir -p package/lean/filebrowser
 pushd package/lean/filebrowser
 git init
-git remote add -f origin ttps://github.com/immortalwrt/packages.git
+git remote add -f origin https://github.com/immortalwrt/packages.git
 git config core.sparsecheckout true
 echo "utils/filebrowser" >> .git/info/sparse-checkout
 git pull --depth 1 origin $IMMORTALWRT_BRANCH
@@ -58,7 +58,7 @@ rm -rf package/lean/luci-app-smartdns
 mkdir -p package/lean/luci-app-smartdns
 pushd package/lean/luci-app-smartdns
 git init
-git remote add -f origin ttps://github.com/immortalwrt/luci.git
+git remote add -f origin https://github.com/immortalwrt/luci.git
 git config core.sparsecheckout true
 echo "applications/luci-app-smartdns" >> .git/info/sparse-checkout
 git pull --depth 1 origin $IMMORTALWRT_BRANCH
