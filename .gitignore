@@ -1,0 +1,38 @@
+# OpenWrt source (cloned via git)
+/openwrt/
+/openwrt.bak.*/
+
+# Build cache & directories
+/cache/
+/staging_dir/
+/build_dir/
+/tmp/
+
+# Feeds & packages (cloned via scripts, should live inside openwrt/)
+/feeds/
+/package/
+
+# Generated firmware, build artifacts & outputs
+/release/
+/output/
+/openwrt/bin/
+
+# Log files
+*.log
+
+# Runtime files
+*.pid
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Editor
+*.swp
+*.swo
+*~
+.idea/
+.vscode/
+
+# Keep empty directories with .gitkeep
+!.gitkeep

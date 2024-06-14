@@ -1,0 +1,21 @@
+version: '3.8'
+
+services:
+  builder:
+    build: .
+    image: action-lede:latest
+    container_name: action-lede-builder
+    volumes:
+      - ..:/workdir/Actions-LEDE
+    stdin_open: true
+    tty: true
+    command: /bin/bash
+
+  build:
+    build: .
+    image: action-lede:latest
+    container_name: action-lede-build
+    volumes:
+      - ..:/workdir/Actions-LEDE
+    command: >
+      bash -c "cd /workdir/Actions-LEDE && bash build.sh"
