@@ -20,6 +20,8 @@
 #echo 'src-git passwall https://github.com/xiaorouji/openwrt-passwall' >>feeds.conf.default
 #echo 'src-git luci https://github.com/coolsnowwolf/luci.git;openwrt-23.05' >>feeds.conf.default
 
+sed -i '/^#src-git luci https:\/\/github.com\/coolsnowwolf\/luci$/s/^#//' feeds.conf.default && sed -i '/^src-git luci https:\/\/github.com\/coolsnowwolf\/luci\.git;openwrt-23\.05$/s/^/#/' feeds.conf.default
+
 LUCI_BRANCH=18.06
 IMMORTALWRT_BRANCH=openwrt-18.06
 OPENCLASH_BRANCH=dev
@@ -66,7 +68,3 @@ rm -rf package/lean/luci-app-openclash
 mv vernesong/OpenClash/luci-app-openclash package/lean/luci-app-openclash
 
 rm -rf vernesong
-
-rm -rf package/lean/luci-app-adguardhome
-git clone --depth 1 -b beta https://github.com/rufengsuixing/luci-app-adguardhome.git package/lean/luci-app-adguardhome
-sed -i "s/\$(TOPDIR)\/luci.mk/\$(TOPDIR)\/feeds\/luci\/luci.mk/g" package/lean/luci-app-adguardhome/Makefile
