@@ -68,3 +68,7 @@ rm -rf package/lean/luci-app-openclash
 mv vernesong/OpenClash/luci-app-openclash package/lean/luci-app-openclash
 
 rm -rf vernesong
+
+rm -rf package/lean/luci-app-adguardhome
+git clone --depth 1 -b beta https://github.com/rufengsuixing/luci-app-adguardhome.git package/lean/luci-app-adguardhome
+sed -i "s/\$(TOPDIR)\/luci.mk/\$(TOPDIR)\/feeds\/luci\/luci.mk/g" package/lean/luci-app-adguardhome/Makefile
