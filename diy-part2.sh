@@ -858,11 +858,11 @@ config download-file
 
 curl --retry 5 -L https://github.com/pymumu/smartdns/raw/master/package/openwrt/custom.conf -o feeds/packages/net/smartdns/conf/custom.conf
 
-latest_ver="$(curl --retry 5 https://api.github.com/repos/AdguardTeam/AdGuardHome/releases/latest 2>/dev/null|grep -E 'tag_name' |grep -E 'v[0-9.]+' -o 2>/dev/null)"
-curl --retry 5 -L https://github.com/AdguardTeam/AdGuardHome/releases/download/${latest_ver}/AdGuardHome_linux_${Arch}.tar.gz | tar zxf -
-mkdir -p package/base-files/files/usr/bin/AdGuardHome
-mv AdGuardHome/AdGuardHome package/base-files/files/usr/bin/AdGuardHome
-rm -rf AdGuardHome
+#latest_ver="$(curl --retry 5 https://api.github.com/repos/AdguardTeam/AdGuardHome/releases/latest 2>/dev/null|grep -E 'tag_name' |grep -E 'v[0-9.]+' -o 2>/dev/null)"
+#curl --retry 5 -L https://github.com/AdguardTeam/AdGuardHome/releases/download/${latest_ver}/AdGuardHome_linux_${Arch}.tar.gz | tar zxf -
+#mkdir -p package/base-files/files/usr/bin/AdGuardHome
+#mv AdGuardHome/AdGuardHome package/base-files/files/usr/bin/AdGuardHome
+#rm -rf AdGuardHome
 echo '
 bind_host: 0.0.0.0
 bind_port: 3000
