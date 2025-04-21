@@ -140,7 +140,6 @@ config openclash 'config'
 	option core_version 'linux-${CPU_MODEL}'
 	option enable_meta_sniffer_pure_ip '0'
 	option cndomain_custom_url 'https://testingcf.jsdelivr.net/gh/felixonmars/dnsmasq-china-list@master/accelerated-domains.china.conf'
-	option dashboard_password 'openwrt'
 	option custom_domain_dns_server '127.0.0.1#6053'
 	option urltest_address_mod '0'
 	option find_process_mode 'always'
@@ -149,19 +148,26 @@ config openclash 'config'
 	option custom_host '1'
 	option global_client_fingerprint '0'
 	option create_config '0'
-	option enable '1'
 	option default_resolvfile '/tmp/resolv.conf.d/resolv.conf.auto'
 	option dnsmasq_resolvfile '/tmp/resolv.conf.d/resolv.conf.auto'
 	option urltest_interval_mod '0'
 	option enable_unified_delay '1'
 	option keep_alive_interval '0'
+	option config_reload '1'
 	option skip_proxy_address '1'
 	option proxy_dns_group 'Disable'
 	option lan_interface_name '0'
-	option config_reload '1'
+	option disable_quic_go_gso '0'
+	option enable_respect_rules '0'
+	option enable '1'
 	option redirect_dns '1'
 	option dnsmasq_cachesize '0'
 	option cachesize_dns '1'
+	option dashboard_password 'openwrt'
+	option geoasn_auto_update '1'
+	option geoasn_update_week_time '*'
+	option geoasn_update_day_time '1'
+	option geoasn_custom_url 'https://fastly.jsdelivr.net/gh/xishang0128/geoip@release/GeoLite2-ASN.mmdb'
 
 config dns_servers
 	option type 'udp'
@@ -507,28 +513,6 @@ config dns_servers
 	option node_resolve '0'
 	option interface 'Disable'
 	option specific_group 'Disable'
-
-config rule_providers
-	option enabled '1'
-	option config 'config.yaml'
-	option name 'anti-ad-white'
-	option type 'http'
-	option behavior 'domain'
-	option url 'https://raw.githubusercontent.com/privacy-protection-tools/dead-horse/master/anti-ad-white-for-clash.yaml'
-	option interval '86400'
-	option position '0'
-	option group 'DIRECT'
-
-config rule_providers
-	option enabled '1'
-	option config 'config.yaml'
-	option name 'anti-ad'
-	option type 'http'
-	option behavior 'domain'
-	option url 'https://raw.githubusercontent.com/privacy-protection-tools/anti-AD/master/anti-ad-clash.yaml'
-	option interval '86400'
-	option position '0'
-	option group 'REJECT'
 ' >package/lean/luci-app-openclash/root/etc/config/openclash
 mkdir -p package/lean/luci-app-openclash/root/etc/openclash/core
 if ${CLASH_META_REPOS_VERNESONG}; then
@@ -878,11 +862,11 @@ config download-file
 
 curl --retry 5 -L https://github.com/pymumu/smartdns/raw/master/package/openwrt/custom.conf -o feeds/packages/net/smartdns/conf/custom.conf
 
-latest_ver="$(curl --retry 5 https://api.github.com/repos/AdguardTeam/AdGuardHome/releases/latest 2>/dev/null|grep -E 'tag_name' |grep -E 'v[0-9.]+' -o 2>/dev/null)"
-curl --retry 5 -L https://github.com/AdguardTeam/AdGuardHome/releases/download/${latest_ver}/AdGuardHome_linux_${Arch}.tar.gz | tar zxf -
-mkdir -p package/base-files/files/usr/bin/AdGuardHome
-mv AdGuardHome/AdGuardHome package/base-files/files/usr/bin/AdGuardHome
-rm -rf AdGuardHome
+#latest_ver="$(curl --retry 5 https://api.github.com/repos/AdguardTeam/AdGuardHome/releases/latest 2>/dev/null|grep -E 'tag_name' |grep -E 'v[0-9.]+' -o 2>/dev/null)"
+#curl --retry 5 -L https://github.com/AdguardTeam/AdGuardHome/releases/download/${latest_ver}/AdGuardHome_linux_${Arch}.tar.gz | tar zxf -
+#mkdir -p package/base-files/files/usr/bin/AdGuardHome
+#mv AdGuardHome/AdGuardHome package/base-files/files/usr/bin/AdGuardHome
+#rm -rf AdGuardHome
 echo '
 bind_host: 0.0.0.0
 bind_port: 3000
