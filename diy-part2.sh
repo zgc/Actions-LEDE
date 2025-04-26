@@ -590,7 +590,7 @@ config server
 	option exclude_default_group '0'
 	option no_check_certificate '0'
 	option blacklist_ip '0'
-	option host-name 'dot.pub'
+	option host_name 'dot.pub'
 	option enabled '1'
 
 config server
@@ -599,7 +599,7 @@ config server
 	option exclude_default_group '0'
 	option no_check_certificate '0'
 	option blacklist_ip '0'
-	option host-name 'dns.alidns.com'
+	option host_name 'dns.alidns.com'
 	option enabled '1'
 
 config server
@@ -608,7 +608,7 @@ config server
 	option exclude_default_group '0'
 	option no_check_certificate '0'
 	option blacklist_ip '0'
-	option host-name 'doh.pub'
+	option host_name 'doh.pub'
 	option http_host 'doh.pub'
 	option enabled '1'
 
@@ -661,7 +661,7 @@ config server
 	option exclude_default_group '1'
 	option no_check_certificate '0'
 	option blacklist_ip '0'
-	option host-name 'dns.google'
+	option host_name 'dns.google'
 	option enabled '1'
 
 config server
