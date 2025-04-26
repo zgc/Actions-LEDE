@@ -528,6 +528,7 @@ chmod +x package/lean/luci-app-openclash/root/etc/openclash/core/clash_meta
 curl --retry 5 -L https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download/geoip.dat -o package/lean/luci-app-openclash/root/etc/openclash/GeoIP.dat
 
 echo '
+
 config smartdns
 	option server_name 'smartdns'
 	option port '6053'
@@ -560,290 +561,140 @@ config smartdns
 	option rr_ttl_min '600'
 	option seconddns_force_aaaa_soa '1'
 	option enable_auto_update '1'
-	list conf_files 'anti-ad-white.conf'
+	option proxy_server 'socks5://127.0.0.1:7893'
 	list conf_files 'anti-ad.conf'
 
 config server
-	option type 'udp'
-	option ip '8.8.8.8'
-	option server_group 'foreign'
-	option blacklist_ip '0'
-	option addition_arg '-exclude-default-group'
-	option enabled '1'
-
-config server
-	option type 'udp'
-	option ip '8.8.4.4'
-	option server_group 'foreign'
-	option blacklist_ip '0'
-	option addition_arg '-exclude-default-group'
-	option enabled '0'
-
-config server
-	option type 'udp'
-	option ip '1.1.1.1'
-	option server_group 'foreign'
-	option blacklist_ip '0'
-	option addition_arg '-exclude-default-group'
-	option enabled '1'
-
-config server
-	option ip '1.0.0.1'
-	option type 'udp'
-	option server_group 'foreign'
-	option blacklist_ip '0'
-	option addition_arg '-exclude-default-group'
-	option enabled '0'
-
-config server
-	option type 'udp'
-	option ip '4.2.2.1'
-	option enabled '0'
-	option server_group 'foreign'
-	option blacklist_ip '0'
-	option addition_arg '-exclude-default-group'
-
-config server
-	option type 'udp'
-	option ip '4.2.2.2'
-	option enabled '0'
-	option server_group 'foreign'
-	option blacklist_ip '0'
-	option addition_arg '-exclude-default-group'
-
-config server
-	option type 'udp'
 	option ip '119.29.29.29'
-	option enabled '1'
+	option type 'udp'
+	option enabled '0'
 
 config server
-	option type 'udp'
 	option ip '223.5.5.5'
-	option enabled '1'
-
-config server
 	option type 'udp'
 	option enabled '0'
-	option ip '223.6.6.6'
 
 config server
-	option ip '8.8.8.8'
-	option type 'tcp'
-	option server_group 'foreign'
-	option blacklist_ip '0'
-	option addition_arg '-exclude-default-group'
-	option enabled '0'
-
-config server
-	option ip '8.8.4.4'
-	option type 'tcp'
-	option blacklist_ip '0'
-	option server_group 'foreign'
-	option addition_arg '-exclude-default-group'
-	option enabled '0'
-
-config server
-	option ip '1.1.1.1'
-	option type 'tcp'
-	option server_group 'foreign'
-	option blacklist_ip '0'
-	option addition_arg '-exclude-default-group'
-	option enabled '0'
-
-config server
-	option ip '1.0.0.1'
-	option type 'tcp'
-	option server_group 'foreign'
-	option blacklist_ip '0'
-	option addition_arg '-exclude-default-group'
-	option enabled '0'
-
-config server
-	option ip '4.2.2.1'
-	option type 'tcp'
-	option enabled '0'
-	option server_group 'foreign'
-	option blacklist_ip '0'
-	option addition_arg '-exclude-default-group'
-
-config server
-	option ip '4.2.2.2'
-	option enabled '0'
-	option type 'tcp'
-	option server_group 'foreign'
-	option blacklist_ip '0'
-	option addition_arg '-exclude-default-group'
-
-config server
-	option enabled '0'
 	option ip '119.29.29.29'
 	option type 'tcp'
+	option enabled '0'
 
 config server
-	option enabled '0'
 	option ip '223.5.5.5'
 	option type 'tcp'
-
-config server
-	option enabled '0'
-	option ip '223.6.6.6'
-	option type 'tcp'
-
-config server
-	option ip '8.8.8.8'
-	option type 'tls'
-	option no_check_certificate '0'
-	option server_group 'foreign'
-	option blacklist_ip '0'
-	option host_name 'dns.google'
-	option addition_arg '-exclude-default-group'
-	option enabled '0'
-
-config server
-	option ip '8.8.4.4'
-	option type 'tls'
-	option enabled '0'
-	option no_check_certificate '0'
-	option server_group 'foreign'
-	option blacklist_ip '0'
-	option host_name 'dns.google'
-	option addition_arg '-exclude-default-group'
-
-config server
-	option ip '1.1.1.1'
-	option type 'tls'
-	option no_check_certificate '0'
-	option server_group 'foreign'
-	option blacklist_ip '0'
-	option host_name '1dot1dot1dot1.cloudflare-dns.com'
-	option addition_arg '-exclude-default-group'
-	option enabled '0'
-
-config server
-	option ip '1.0.0.1'
-	option type 'tls'
-	option enabled '0'
-	option no_check_certificate '0'
-	option server_group 'foreign'
-	option blacklist_ip '0'
-	option host_name '1dot1dot1dot1.cloudflare-dns.com'
-	option addition_arg '-exclude-default-group'
-
-config server
-	option ip 'dot.pub'
-	option type 'tls'
-	option no_check_certificate '0'
-	option enabled '0'
-
-config server
-	option ip '1.12.12.12'
-	option type 'tls'
-	option no_check_certificate '0'
 	option enabled '0'
 
 config server
 	option ip '120.53.53.53'
 	option type 'tls'
+	option exclude_default_group '0'
 	option no_check_certificate '0'
-	option enabled '0'
+	option blacklist_ip '0'
+	option host-name 'dot.pub'
+	option enabled '1'
 
 config server
 	option ip '223.5.5.5'
 	option type 'tls'
+	option exclude_default_group '0'
 	option no_check_certificate '0'
-	option enabled '0'
-	option host_name 'dns.alidns.com'
+	option blacklist_ip '0'
+	option host-name 'dns.alidns.com'
+	option enabled '1'
 
 config server
+	option ip '120.53.53.53/dns-query'
+	option type 'https'
+	option exclude_default_group '0'
+	option no_check_certificate '0'
+	option blacklist_ip '0'
+	option host-name 'doh.pub'
+	option http_host 'doh.pub'
+	option enabled '1'
+
+config server
+	option ip '223.5.5.5/dns-query'
+	option type 'https'
+	option exclude_default_group '0'
+	option no_check_certificate '0'
+	option blacklist_ip '0'
+	option host_name 'dns.alidns.com'
+	option http_host 'dns.alidns.com'
+	option enabled '1'
+
+config server
+	option ip '8.8.8.8'
+	option type 'udp'
+	option server_group 'foreign'
+	option exclude_default_group '1'
+	option blacklist_ip '0'
 	option enabled '0'
-	option ip '223.6.6.6'
+
+config server
+	option ip '1.1.1.1'
+	option type 'udp'
+	option server_group 'foreign'
+	option exclude_default_group '1'
+	option blacklist_ip '0'
+	option enabled '0'
+
+config server
+	option ip '8.8.8.8'
+	option type 'tcp'
+	option server_group 'foreign'
+	option exclude_default_group '1'
+	option blacklist_ip '0'
+	option enabled '0'
+
+config server
+	option ip '1.1.1.1'
+	option type 'tcp'
+	option server_group 'foreign'
+	option exclude_default_group '1'
+	option blacklist_ip '0'
+	option enabled '0'
+
+config server
+	option ip '8.8.8.8'
 	option type 'tls'
-	option no_check_certificate '0'
-	option host_name 'dns.alidns.com'
-
-config server
-	option ip 'https://1.1.1.1/dns-query'
-	option type 'https'
-	option no_check_certificate '0'
 	option server_group 'foreign'
+	option exclude_default_group '1'
+	option no_check_certificate '0'
 	option blacklist_ip '0'
-	option host_name '1dot1dot1dot1.cloudflare-dns.com'
-	option http_host '1dot1dot1dot1.cloudflare-dns.com'
-	option addition_arg '-exclude-default-group'
-	option enabled '0'
+	option host-name 'dns.google'
+	option enabled '1'
 
 config server
-	option ip 'https://1.0.0.1/dns-query'
-	option type 'https'
-	option no_check_certificate '0'
+	option ip '1.1.1.1'
+	option type 'tls'
 	option server_group 'foreign'
+	option exclude_default_group '1'
+	option no_check_certificate '0'
 	option blacklist_ip '0'
-	option host_name '1dot1dot1dot1.cloudflare-dns.com'
-	option http_host '1dot1dot1dot1.cloudflare-dns.com'
-	option addition_arg '-exclude-default-group'
-	option enabled '0'
+	option host_name 'cloudflare-dns.com'
+	option enabled '1'
 
 config server
-	option ip 'https://8.8.8.8/dns-query'
+	option ip '1.1.1.1/dns-query'
 	option type 'https'
-	option no_check_certificate '0'
 	option server_group 'foreign'
+	option exclude_default_group '1'
+	option no_check_certificate '0'
 	option blacklist_ip '0'
-	option host_name 'dns.google'
-	option http_host 'dns.google'
-	option addition_arg '-exclude-default-group'
-	option enabled '0'
+	option host_name 'cloudflare-dns.com'
+	option http_host 'cloudflare-dns.com'
+	option enabled '1'
 
 config server
-	option ip 'https://8.8.4.4/dns-query'
+	option ip '8.8.8.8/dns-query'
 	option type 'https'
-	option no_check_certificate '0'
 	option server_group 'foreign'
+	option exclude_default_group '1'
+	option no_check_certificate '0'
 	option blacklist_ip '0'
 	option host_name 'dns.google'
 	option http_host 'dns.google'
-	option addition_arg '-exclude-default-group'
-	option enabled '0'
-
-config server
-	option ip 'https://doh.pub/dns-query'
-	option type 'https'
-	option no_check_certificate '0'
-	option enabled '0'
-
-config server
-	option ip 'https://sm2.doh.pub/dns-query'
-	option type 'https'
-	option no_check_certificate '0'
-	option enabled '0'
-
-config server
-	option ip 'https://1.12.12.12/dns-query'
-	option type 'https'
-	option no_check_certificate '0'
-	option enabled '0'
-
-config server
-	option ip 'https://120.53.53.53/dns-query'
-	option type 'https'
-	option no_check_certificate '0'
-	option enabled '0'
-
-config server
-	option ip 'https://223.5.5.5/dns-query'
-	option type 'https'
-	option no_check_certificate '0'
-	option enabled '0'
-	option host_name 'dns.alidns.com'
-	option http_host 'dns.alidns.com'
-
-config server
-	option ip 'https://223.6.6.6/dns-query'
-	option type 'https'
-	option no_check_certificate '0'
-	option enabled '0'
-	option host_name 'dns.alidns.com'
-	option http_host 'dns.alidns.com'
+	option enabled '1'
 
 config domain-rule
 	option no_speed_check '0'
@@ -851,13 +702,14 @@ config domain-rule
 
 config download-file
 	option type 'config'
-	option name 'anti-ad-white.conf'
-	option url 'https://raw.githubusercontent.com/privacy-protection-tools/dead-horse/master/anti-ad-white-for-smartdns.txt'
-
-config download-file
-	option type 'config'
 	option name 'anti-ad.conf'
 	option url 'https://raw.githubusercontent.com/privacy-protection-tools/anti-AD/master/anti-ad-smartdns.conf'
+
+config client-rule
+
+config ip-rule
+
+
 ' >feeds/packages/net/smartdns/conf/smartdns.conf
 
 curl --retry 5 -L https://github.com/pymumu/smartdns/raw/master/package/openwrt/custom.conf -o feeds/packages/net/smartdns/conf/custom.conf
