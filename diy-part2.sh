@@ -591,7 +591,7 @@ config server
 	option no_check_certificate '0'
 	option blacklist_ip '0'
 	option host_name 'dot.pub'
-	option enabled '1'
+	option enabled '0'
 
 config server
 	option ip '223.5.5.5'
@@ -600,7 +600,7 @@ config server
 	option no_check_certificate '0'
 	option blacklist_ip '0'
 	option host_name 'dns.alidns.com'
-	option enabled '1'
+	option enabled '0'
 
 config server
 	option ip '120.53.53.53/dns-query'
@@ -662,7 +662,7 @@ config server
 	option no_check_certificate '0'
 	option blacklist_ip '0'
 	option host_name 'dns.google'
-	option enabled '1'
+	option enabled '0'
 
 config server
 	option ip '1.1.1.1'
@@ -672,7 +672,7 @@ config server
 	option no_check_certificate '0'
 	option blacklist_ip '0'
 	option host_name 'cloudflare-dns.com'
-	option enabled '1'
+	option enabled '0'
 
 config server
 	option ip '1.1.1.1/dns-query'
