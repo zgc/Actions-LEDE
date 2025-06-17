@@ -135,7 +135,7 @@ config openclash 'config'
 	option geo_custom_url 'https://testingcf.jsdelivr.net/gh/alecthw/mmdb_china_ip_list@release/Country.mmdb'
 	option dashboard_forward_ssl '0'
 	option enable_http3 '1'
-	option dashboard_type 'Meta'
+	option dashboard_type 'Smart'
 	option yacd_type 'Meta'
 	option append_default_dns '0'
 	option enable_meta_sniffer_pure_ip '0'
@@ -172,6 +172,7 @@ config openclash 'config'
 	option redirect_dns '1'
 	option dnsmasq_cachesize '0'
 	option cachesize_dns '1'
+	option smart_enable '1'
 
 config dns_servers
 	option ip '119.29.29.29'
@@ -410,7 +411,7 @@ config groups
 
 config groups
 	option name 'AutoTest'
-	option type 'url-test'
+	option type 'smart'
 	option enabled '1'
 	option disable_udp 'false'
 	option test_url 'http://cp.cloudflare.com/generate_204'
