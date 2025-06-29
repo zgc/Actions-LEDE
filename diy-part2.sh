@@ -758,7 +758,7 @@ config rule_providers
 ' >package/lean/luci-app-openclash/root/etc/config/openclash
 mkdir -p package/lean/luci-app-openclash/root/etc/openclash/core
 if ${CLASH_META_REPOS_VERNESONG}; then
-  curl --retry 5 -L https://github.com/vernesong/OpenClash/raw/core/dev/meta/clash-linux-${CPU_MODEL}.tar.gz | tar zxf -
+  curl --retry 5 -L https://github.com/vernesong/OpenClash/raw/core/dev/smart/clash-linux-${CPU_MODEL}.tar.gz | tar zxf -
   mv clash package/lean/luci-app-openclash/root/etc/openclash/core/clash_meta
 else
   CLASH_META_VERSION="$(curl --retry 5 -L https://api.github.com/repos/MetaCubeX/mihomo/releases/latest 2>/dev/null|grep -E 'tag_name' |grep -E 'v[0-9.]+' -o 2>/dev/null)"
