@@ -26,7 +26,7 @@ fi
 if [ ! -z $REPO_COMMIT ]; then
   pushd openwrt
   rm -rf files package
-  git pull origin $REPO_BRANCH
+  git pull origin $REPO_COMMIT
   git reset --hard $REPO_COMMIT
   popd
 fi
