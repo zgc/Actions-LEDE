@@ -776,7 +776,7 @@ else
 fi
 chmod +x package/lean/luci-app-openclash/root/etc/openclash/core/clash_meta
 curl --retry 5 -L https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download/geoip.dat -o package/lean/luci-app-openclash/root/etc/openclash/GeoIP.dat
-
+curl --retry 5 -L https://github.com/vernesong/mihomo/releases/download/LightGBM-Model/Model-large.bin -o package/lean/luci-app-openclash/root/etc/openclash/Model.bin
 echo '
 
 config smartdns
