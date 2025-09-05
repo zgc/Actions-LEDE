@@ -6,6 +6,7 @@ DEVICE_NAME=$(grep '^CONFIG_TARGET.*DEVICE.*=y' config.seed | sed -r 's/CONFIG_T
 RELEASE_NAME=${RELEASE_NAME:-$DEVICE_NAME}
 REPO_URL="https://github.com/coolsnowwolf/lede"
 REPO_BRANCH="master"
+REPO_COMMIT="c196f534cdda3cf63e3f3ade2dcb2a4f1686fa33"
 FEEDS_CONF="feeds.conf.default"
 CONFIG_FILE="config.seed"
 DIY_P1_SH="diy-part1.sh"
@@ -14,11 +15,19 @@ DIY_P2_SH="diy-part2.sh"
 
 if [ ! -e openwrt ]; then
   git clone --depth 1 $REPO_URL -b $REPO_BRANCH openwrt
-else
+elif [ -z $REPO_COMMIT ]; then
   pushd openwrt
   rm -rf files package
   git pull origin $REPO_BRANCH
   git reset --hard origin/$REPO_BRANCH
+  popd
+fi
+
+if [ ! -z $REPO_COMMIT ]; then
+  pushd openwrt
+  rm -rf files package
+  git pull origin $REPO_BRANCH
+  git reset --hard $REPO_COMMIT
   popd
 fi
 
