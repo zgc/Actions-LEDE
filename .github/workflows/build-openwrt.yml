@@ -22,6 +22,7 @@ on:
 env:
   REPO_URL: https://github.com/coolsnowwolf/lede
   REPO_BRANCH: master
+  REPO_COMMIT: c196f534cdda3cf63e3f3ade2dcb2a4f1686fa33
   FEEDS_CONF: feeds.conf.default
   CONFIG_FILE: config.seed
   DIY_P1_SH: diy-part1.sh
@@ -104,6 +105,7 @@ jobs:
         echo -e "GITHUB_WORKSPACE -> $GITHUB_WORKSPACE"
         df -hT $GITHUB_WORKSPACE
         git clone --depth 1 $REPO_URL -b $REPO_BRANCH openwrt
+        [ ! -z $REPO_COMMIT ] && git reset --hard $REPO_COMMIT
         ln -sf /workdir/openwrt $GITHUB_WORKSPACE/openwrt
 
     - name: Cache
