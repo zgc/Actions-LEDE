@@ -1,0 +1,28 @@
+version: '3.8'
+
+services:
+  builder:
+    build: .
+    image: action-lede:latest
+    container_name: action-lede-builder
+    volumes:
+      - ../cache/dl:/ext-cache/dl
+      - ../cache/staging_dir:/ext-cache/staging_dir
+      - ../cache/build_dir:/ext-cache/build_dir
+      - ../output:/workdir/Actions-LEDE/output
+      - ..:/workdir/Actions-LEDE
+    stdin_open: true
+    tty: true
+    command: /bin/bash
+
+  build:
+    build: .
+    image: action-lede:latest
+    container_name: action-lede-build
+    volumes:
+      - ../cache/dl:/ext-cache/dl
+      - ../cache/staging_dir:/ext-cache/staging_dir
+      - ../cache/build_dir:/ext-cache/build_dir
+      - ../output:/workdir/Actions-LEDE/output
+    command: >
+      bash -c "cd /workdir/Actions-LEDE && bash build.sh"

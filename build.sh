@@ -6,7 +6,7 @@ DEVICE_NAME=$(grep '^CONFIG_TARGET.*DEVICE.*=y' config.seed | sed -r 's/CONFIG_T
 RELEASE_NAME=${RELEASE_NAME:-$DEVICE_NAME}
 REPO_URL="https://github.com/coolsnowwolf/lede"
 REPO_BRANCH="master"
-REPO_COMMIT="c196f534cdda3cf63e3f3ade2dcb2a4f1686fa33"
+REPO_COMMIT=""
 FEEDS_CONF="feeds.conf.default"
 CONFIG_FILE="config.seed"
 DIY_P1_SH="diy-part1.sh"
@@ -38,6 +38,15 @@ pushd openwrt
 GITHUB_WORKSPACE=$GITHUB_WORKSPACE $GITHUB_WORKSPACE/$DIY_P1_SH
 ./scripts/feeds update -f -a
 ./scripts/feeds install -a
+
+# 复制配置并同步
+[ -e ../$CONFIG_FILE ] && cp ../$CONFIG_FILE .config
+make defconfig
+
+# 先编译 luci-base 生成 po2lmo 工具（解决 default-settings 依赖）
+echo "编译 luci-base 生成 po2lmo..."
+make package/luci-base/host/compile -j$(nproc) || make package/luci-base/host/compile -j1 V=s
+
 popd
 
 [ -e files ] && cp -r files openwrt/files
