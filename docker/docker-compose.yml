@@ -6,10 +6,6 @@ services:
     image: action-lede:latest
     container_name: action-lede-builder
     volumes:
-      - ../cache/dl:/ext-cache/dl
-      - ../cache/staging_dir:/ext-cache/staging_dir
-      - ../cache/build_dir:/ext-cache/build_dir
-      - ../output:/workdir/Actions-LEDE/output
       - ..:/workdir/Actions-LEDE
     stdin_open: true
     tty: true
@@ -20,9 +16,6 @@ services:
     image: action-lede:latest
     container_name: action-lede-build
     volumes:
-      - ../cache/dl:/ext-cache/dl
-      - ../cache/staging_dir:/ext-cache/staging_dir
-      - ../cache/build_dir:/ext-cache/build_dir
-      - ../output:/workdir/Actions-LEDE/output
+      - ..:/workdir/Actions-LEDE
     command: >
       bash -c "cd /workdir/Actions-LEDE && bash build.sh"
