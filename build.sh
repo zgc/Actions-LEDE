@@ -1,11 +1,15 @@
 #!/bin/bash
 
+# 修复 Docker git 权限问题（必须在任何 git 命令之前）
+export HOME=/root
+git config --global --add safe.directory "*"
+
 GITHUB_WORKSPACE=$(cd $(dirname $0);pwd)
 RELEASE_DIR=${RELEASE_DIR:-$GITHUB_WORKSPACE/release}
-DEVICE_NAME=$(grep '^CONFIG_TARGET.*DEVICE.*=y' config.seed | sed -r 's/CONFIG_TARGET_(.*)_DEVICE.*=y/\1/')
+DEVICE_NAME=$(grep "^CONFIG_TARGET.*DEVICE.*=y" config.seed | sed -r "s/CONFIG_TARGET_(.*)_DEVICE.*=y/\1/")
 RELEASE_NAME=${RELEASE_NAME:-$DEVICE_NAME}
-REPO_URL="https://github.com/coolsnowwolf/lede"
-REPO_BRANCH="master"
+REPO_URL="https://github.com/immortalwrt/immortalwrt"
+REPO_BRANCH="openwrt-18.06"
 REPO_COMMIT=""
 FEEDS_CONF="feeds.conf.default"
 CONFIG_FILE="config.seed"
@@ -18,16 +22,16 @@ if [ ! -e openwrt ]; then
 elif [ -z $REPO_COMMIT ]; then
   pushd openwrt
   rm -rf files package
-  git pull origin $REPO_BRANCH
-  git reset --hard origin/$REPO_BRANCH
+  git pull origin $REPO_BRANCH || true
+  git reset --hard HEAD
   popd
 fi
 
 if [ ! -z $REPO_COMMIT ]; then
   pushd openwrt
   rm -rf files package
-  git pull origin $REPO_COMMIT
-  git reset --hard $REPO_COMMIT
+  git pull origin $REPO_COMMIT || true
+  git reset --hard HEAD
   popd
 fi
 
@@ -43,30 +47,30 @@ GITHUB_WORKSPACE=$GITHUB_WORKSPACE $GITHUB_WORKSPACE/$DIY_P1_SH
 [ -e ../$CONFIG_FILE ] && cp ../$CONFIG_FILE .config
 make defconfig
 
-# 先编译 luci-base 生成 po2lmo 工具（解决 default-settings 依赖）
-echo "编译 luci-base 生成 po2lmo..."
+# 编译 luci-base 生成 po2lmo
 make package/luci-base/host/compile -j$(nproc) || make package/luci-base/host/compile -j1 V=s
 
 popd
-
-[ -e files ] && cp -r files openwrt/files
-[ -e $CONFIG_FILE ] && cp $CONFIG_FILE openwrt/.config
 chmod +x $DIY_P2_SH
-
-pushd openwrt
+cd openwrt
 GITHUB_WORKSPACE=$GITHUB_WORKSPACE $GITHUB_WORKSPACE/$DIY_P2_SH
+
+# 再次 defconfig 确保 diy-part2.sh 的修改被应用
 make defconfig
-make download -j8
+
+# 下载依赖 & 编译
+cd $GITHUB_WORKSPACE/openwrt
+make download -j$(nproc) || make download -j1 V=s
+find dl -size -1024c -exec rm -f {} \;
+find dl -size 0 -exec rm -f {} \;
 make -j$(nproc) || make -j1 || make -j1 V=s
-popd
 
-mkdir -p $RELEASE_DIR
-pushd openwrt/bin/targets/*/*
-cp config.buildinfo $RELEASE_DIR
-cp $(ls -1 ./*img.gz | head -1) $RELEASE_DIR/$RELEASE_NAME.img.gz
-popd
+cp -f .config ${GITHUB_WORKSPACE}/${CONFIG_FILE}
 
-pushd $RELEASE_DIR
-md5sum $RELEASE_NAME.img.gz > $RELEASE_NAME.img.gz.md5
-gzip -dc $RELEASE_NAME.img.gz | md5sum | sed "s/-/$RELEASE_NAME.img/" > $RELEASE_NAME.img.md5
-popd
+# 复制固件
+cd $GITHUB_WORKSPACE/openwrt/bin/targets/*/*
+cp -f config.buildinfo ${GITHUB_WORKSPACE}/${CONFIG_FILE}
+ls -A *.img.gz 2>/dev/null && cp -f *.img.gz ${GITHUB_WORKSPACE}/release/x86_64.img.gz
+ls -A *.manifest 2>/dev/null && cp -f *.manifest ${GITHUB_WORKSPACE}/release/x86_64.manifest
+cd ${GITHUB_WORKSPACE}/release
+ls *.img.gz 2>/dev/null
