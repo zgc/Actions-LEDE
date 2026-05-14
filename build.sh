@@ -18,6 +18,7 @@ DIY_P2_SH="diy-part2.sh"
 
 
 if [ ! -d openwrt/.git ]; then
+  rm -rf openwrt
   git clone --depth 1 $REPO_URL -b $REPO_BRANCH openwrt
 elif [ -z $REPO_COMMIT ]; then
   pushd openwrt
@@ -43,11 +44,9 @@ GITHUB_WORKSPACE=$GITHUB_WORKSPACE $GITHUB_WORKSPACE/$DIY_P1_SH
 ./scripts/feeds update -f -a
 ./scripts/feeds install -a
 
-# 复制配置并同步
 [ -e ../$CONFIG_FILE ] && cp ../$CONFIG_FILE .config
 make defconfig
 
-# 编译 luci-base 生成 po2lmo
 make package/luci-base/host/compile -j$(nproc) || make package/luci-base/host/compile -j1 V=s
 
 popd
@@ -55,10 +54,8 @@ chmod +x $DIY_P2_SH
 cd openwrt
 GITHUB_WORKSPACE=$GITHUB_WORKSPACE $GITHUB_WORKSPACE/$DIY_P2_SH
 
-# 再次 defconfig 确保 diy-part2.sh 的修改被应用
 make defconfig
 
-# 下载依赖 & 编译
 cd $GITHUB_WORKSPACE/openwrt
 make download -j$(nproc) || make download -j1 V=s
 find dl -size -1024c -exec rm -f {} \;
@@ -67,7 +64,6 @@ make -j$(nproc) || make -j1 || make -j1 V=s
 
 cp -f .config ${GITHUB_WORKSPACE}/${CONFIG_FILE}
 
-# 复制固件
 cd $GITHUB_WORKSPACE/openwrt/bin/targets/*/*
 cp -f config.buildinfo ${GITHUB_WORKSPACE}/${CONFIG_FILE}
 ls -A *.img.gz 2>/dev/null && cp -f *.img.gz ${GITHUB_WORKSPACE}/release/x86_64.img.gz
