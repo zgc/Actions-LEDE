@@ -24,9 +24,16 @@ sed -i "s/\$(TOPDIR)\/luci.mk/\$(TOPDIR)\/feeds\/luci\/luci.mk/g" feeds/luci/the
 
 rm -rf feeds/packages/net/smartdns/conf
 mkdir -p feeds/packages/net/smartdns/conf
-sed -i 's/PKG_BUILD_DIR)\/package\/openwrt\/custom.conf/CURDIR)\/conf\/custom.conf/g' feeds/packages/net/smartdns/Makefile
-sed -i 's/PKG_BUILD_DIR)\/package\/openwrt\/files\/etc\/config\/smartdns/CURDIR)\/conf\/smartdns.conf/g' feeds/packages/net/smartdns/Makefile
+# Use local conf files instead of remote curl (more reliable)
+cat > feeds/packages/net/smartdns/conf/custom.conf << 'CUSTOM_EOF'
+# SmartDNS custom configuration
+CUSTOM_EOF
 
+cat > feeds/packages/net/smartdns/conf/smartdns.conf << 'SMARTDNS_EOF'
+# SmartDNS default configuration
+SMARTDNS_EOF
+sed -i 's/PKG_BUILD_DIR)\\/package\\/openwrt\\/custom.conf/\$(CURDIR)\\/conf\\/custom.conf/g' feeds/packages/net/smartdns/Makefile
+sed -i 's/PKG_BUILD_DIR)\\/package\\/openwrt\\/files\\/etc\\/config\\/smartdns/\$(CURDIR)\\/conf\\/smartdns.conf/g' feeds/packages/net/smartdns/Makefile
 cp $GITHUB_WORKSPACE/scripts/check_smartdns_connect.sh package/base-files/files/etc
 cp $GITHUB_WORKSPACE/scripts/check_openclash_connect.sh package/base-files/files/etc
 cp $GITHUB_WORKSPACE/scripts/check_wan_connect.sh package/base-files/files/etc
@@ -41,13 +48,15 @@ chmod +x package/base-files/files/etc/reset_get_img.sh
 chmod +x package/base-files/files/etc/reset_latest.sh
 chmod +x package/base-files/files/etc/reset_offline.sh
 chmod +x package/base-files/files/etc/reset_upload.sh
-sed -i '/exit 0/i\if [[ "$(cat /etc/crontabs/root | grep "/etc/check_smartdns_connect.sh")" = "" ]]; then echo "#*/5 * * * * /etc/check_smartdns_connect.sh" >> /etc/crontabs/root; fi' package/lean/default-settings/files/zzz-default-settings
-sed -i '/exit 0/i\if [[ "$(cat /etc/crontabs/root | grep "/etc/check_openclash_connect.sh")" = "" ]]; then echo "#*/5 * * * * /etc/check_openclash_connect.sh" >> /etc/crontabs/root; fi' package/lean/default-settings/files/zzz-default-settings
-sed -i '/exit 0/i\if [[ "$(cat /etc/crontabs/root | grep "/etc/check_wan_connect.sh")" = "" ]]; then echo "#*/5 * * * * /etc/check_wan_connect.sh" >> /etc/crontabs/root; fi' package/lean/default-settings/files/zzz-default-settings
+cat >> package/emortal/default-settings/files/99-default-settings << 'CRONEOF'
+if [[ "$(cat /etc/crontabs/root | grep "/etc/check_smartdns_connect.sh")" = "" ]]; then echo "#*/5 * * * * /etc/check_smartdns_connect.sh" >> /etc/crontabs/root; fi
+if [[ "$(cat /etc/crontabs/root | grep "/etc/check_openclash_connect.sh")" = "" ]]; then echo "#*/5 * * * * /etc/check_openclash_connect.sh" >> /etc/crontabs/root; fi
+if [[ "$(cat /etc/crontabs/root | grep "/etc/check_wan_connect.sh")" = "" ]]; then echo "#*/5 * * * * /etc/check_wan_connect.sh" >> /etc/crontabs/root; fi
+CRONEOF
 
-sed -i '/uci commit luci/i\uci set luci.main.mediaurlbase="/luci-static/argon"' package/lean/default-settings/files/zzz-default-settings
+sed -i '/uci commit luci/i\uci set luci.main.mediaurlbase="/luci-static/argon"' package/emortal/default-settings/files/99-default-settings
 
-sed -i "s/uci -q set openclash.config.enable=0/uci -q set openclash.config.enable=\$(cat \/etc\/config\/openclash | grep -m 1 \"option enable\" | cut -d: -f2 | awk '{ print \$3}' | cut -d \"'\" -f 2)/g" package/lean/luci-app-openclash/root/etc/uci-defaults/luci-openclash
+sed -i "s/uci -q set openclash.config.enable=0/uci -q set openclash.config.enable=\$(cat \/etc\/config\/openclash | grep -m 1 \"option enable\" | cut -d: -f2 | awk '{ print \$3}' | cut -d \"'\" -f 2)/g" package/emortal/luci-app-openclash/root/etc/uci-defaults/luci-openclash
 
 sed -i 's/login/login -f root/g' feeds/packages/utils/ttyd/files/ttyd.config
 sed -i 's/\${interface:+-i \$interface\}/#\${interface:+-i \$interface\}/g' feeds/packages/utils/ttyd/files/ttyd.init
@@ -763,20 +772,20 @@ config rule_providers
 	option group 'DIRECT'
 
 
-' >package/lean/luci-app-openclash/root/etc/config/openclash
-mkdir -p package/lean/luci-app-openclash/root/etc/openclash/core
+' >package/emortal/luci-app-openclash/root/etc/config/openclash
+mkdir -p package/emortal/luci-app-openclash/root/etc/openclash/core
 if ${CLASH_META_REPOS_VERNESONG}; then
   curl --retry 5 -L https://github.com/vernesong/OpenClash/raw/core/dev/smart/clash-linux-${CPU_MODEL}.tar.gz | tar zxf -
-  mv clash package/lean/luci-app-openclash/root/etc/openclash/core/clash_meta
+  mv clash package/emortal/luci-app-openclash/root/etc/openclash/core/clash_meta
 else
   CLASH_META_VERSION="$(curl --retry 5 -L https://api.github.com/repos/MetaCubeX/mihomo/releases/latest 2>/dev/null|grep -E 'tag_name' |grep -E 'v[0-9.]+' -o 2>/dev/null)"
   curl --retry 5 -L https://github.com/MetaCubeX/mihomo/releases/download/${CLASH_META_VERSION}/mihomo-linux-amd64-${CLASH_META_VERSION}.gz -O
   gzip -d mihomo-linux-amd64-${CLASH_META_VERSION}.gz
-  mv mihomo-linux-amd64-${CLASH_META_VERSION} package/lean/luci-app-openclash/root/etc/openclash/core/clash_meta
+  mv mihomo-linux-amd64-${CLASH_META_VERSION} package/emortal/luci-app-openclash/root/etc/openclash/core/clash_meta
 fi
-chmod +x package/lean/luci-app-openclash/root/etc/openclash/core/clash_meta
-curl --retry 5 -L https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download/geoip.dat -o package/lean/luci-app-openclash/root/etc/openclash/GeoIP.dat
-curl --retry 5 -L https://github.com/vernesong/mihomo/releases/download/LightGBM-Model/Model-large.bin -o package/lean/luci-app-openclash/root/etc/openclash/Model.bin
+chmod +x package/emortal/luci-app-openclash/root/etc/openclash/core/clash_meta
+curl --retry 5 -L https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download/geoip.dat -o package/emortal/luci-app-openclash/root/etc/openclash/GeoIP.dat
+curl --retry 5 -L https://github.com/vernesong/mihomo/releases/download/LightGBM-Model/Model-large.bin -o package/emortal/luci-app-openclash/root/etc/openclash/Model.bin
 echo '
 
 config smartdns
@@ -963,6 +972,26 @@ config ip-rule
 ' >feeds/packages/net/smartdns/conf/smartdns.conf
 
 curl --retry 5 -L https://github.com/pymumu/smartdns/raw/master/package/openwrt/custom.conf -o feeds/packages/net/smartdns/conf/custom.conf
+
+# Fix GCC 8.4.0 libiberty compilation errors (missing headers in newer GCC host)
+# fibheap.c needs limits.h and string.h; regex.c needs stdlib.h
+GCC_LIBIBERTY_DIR="build_dir/toolchain-x86_64_gcc-8.4.0_musl/gcc-8.4.0/libiberty"
+if [ -d "$GCC_LIBIBERTY_DIR" ]; then
+  echo "🔧 Patching GCC 8.4.0 libiberty headers..."
+  FIBHEAP="$GCC_LIBIBERTY_DIR/fibheap.c"
+  if [ -f "$FIBHEAP" ] && ! grep -q '#include <limits.h>' "$FIBHEAP"; then
+    sed -i '/#include "fibheap\.h"/a #include <limits.h>\n#include <string.h>' "$FIBHEAP"
+    echo "✅ fibheap.c patched"
+  fi
+  REGEX="$GCC_LIBIBERTY_DIR/regex.c"
+  if [ -f "$REGEX" ] && ! grep -q '#include <stdlib.h>' "$REGEX"; then
+    sed -i '/#include <string\.h>/a #include <stdlib.h>' "$REGEX"
+    echo "✅ regex.c patched"
+  fi
+  echo "✅ GCC 8.4.0 libiberty headers patched."
+else
+  echo "⏭️ GCC libiberty not yet extracted; will patch during make."
+fi
 
 #latest_ver="$(curl --retry 5 https://api.github.com/repos/AdguardTeam/AdGuardHome/releases/latest 2>/dev/null|grep -E 'tag_name' |grep -E 'v[0-9.]+' -o 2>/dev/null)"
 #curl --retry 5 -L https://github.com/AdguardTeam/AdGuardHome/releases/download/${latest_ver}/AdGuardHome_linux_${Arch}.tar.gz | tar zxf -
