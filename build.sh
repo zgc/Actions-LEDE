@@ -17,7 +17,7 @@ DIY_P1_SH="diy-part1.sh"
 DIY_P2_SH="diy-part2.sh"
 
 
-if [ ! -e openwrt ]; then
+if [ ! -d openwrt/.git ]; then
   git clone --depth 1 $REPO_URL -b $REPO_BRANCH openwrt
 elif [ -z $REPO_COMMIT ]; then
   pushd openwrt
