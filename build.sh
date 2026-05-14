@@ -18,6 +18,9 @@ DIY_P2_SH="diy-part2.sh"
 
 
 if [ ! -d openwrt/.git ]; then
+  # Docker volume mount 的 dl/feeds 导致 rm 失败，先 umount
+  umount openwrt/dl 2>/dev/null || true
+  umount openwrt/feeds 2>/dev/null || true
   rm -rf openwrt
   git clone --depth 1 $REPO_URL -b $REPO_BRANCH openwrt
 elif [ -z $REPO_COMMIT ]; then
