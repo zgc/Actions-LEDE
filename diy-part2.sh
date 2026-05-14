@@ -41,13 +41,13 @@ chmod +x package/base-files/files/etc/reset_get_img.sh
 chmod +x package/base-files/files/etc/reset_latest.sh
 chmod +x package/base-files/files/etc/reset_offline.sh
 chmod +x package/base-files/files/etc/reset_upload.sh
-sed -i '/exit 0/i\if [[ "$(cat /etc/crontabs/root | grep "/etc/check_smartdns_connect.sh")" = "" ]]; then echo "#*/5 * * * * /etc/check_smartdns_connect.sh" >> /etc/crontabs/root; fi' package/lean/default-settings/files/zzz-default-settings
-sed -i '/exit 0/i\if [[ "$(cat /etc/crontabs/root | grep "/etc/check_openclash_connect.sh")" = "" ]]; then echo "#*/5 * * * * /etc/check_openclash_connect.sh" >> /etc/crontabs/root; fi' package/lean/default-settings/files/zzz-default-settings
-sed -i '/exit 0/i\if [[ "$(cat /etc/crontabs/root | grep "/etc/check_wan_connect.sh")" = "" ]]; then echo "#*/5 * * * * /etc/check_wan_connect.sh" >> /etc/crontabs/root; fi' package/lean/default-settings/files/zzz-default-settings
+sed -i '/exit 0/i\if [[ "$(cat /etc/crontabs/root | grep "/etc/check_smartdns_connect.sh")" = "" ]]; then echo "#*/5 * * * * /etc/check_smartdns_connect.sh" >> /etc/crontabs/root; fi' package/emortal/default-settings/files/zzz-default-settings
+sed -i '/exit 0/i\if [[ "$(cat /etc/crontabs/root | grep "/etc/check_openclash_connect.sh")" = "" ]]; then echo "#*/5 * * * * /etc/check_openclash_connect.sh" >> /etc/crontabs/root; fi' package/emortal/default-settings/files/zzz-default-settings
+sed -i '/exit 0/i\if [[ "$(cat /etc/crontabs/root | grep "/etc/check_wan_connect.sh")" = "" ]]; then echo "#*/5 * * * * /etc/check_wan_connect.sh" >> /etc/crontabs/root; fi' package/emortal/default-settings/files/zzz-default-settings
 
-sed -i '/uci commit luci/i\uci set luci.main.mediaurlbase="/luci-static/argon"' package/lean/default-settings/files/zzz-default-settings
+sed -i '/uci commit luci/i\uci set luci.main.mediaurlbase="/luci-static/argon"' package/emortal/default-settings/files/zzz-default-settings
 
-sed -i "s/uci -q set openclash.config.enable=0/uci -q set openclash.config.enable=\$(cat \/etc\/config\/openclash | grep -m 1 \"option enable\" | cut -d: -f2 | awk '{ print \$3}' | cut -d \"'\" -f 2)/g" package/lean/luci-app-openclash/root/etc/uci-defaults/luci-openclash
+sed -i "s/uci -q set openclash.config.enable=0/uci -q set openclash.config.enable=\$(cat \/etc\/config\/openclash | grep -m 1 \"option enable\" | cut -d: -f2 | awk '{ print \$3}' | cut -d \"'\" -f 2)/g" package/emortal/luci-app-openclash/root/etc/uci-defaults/luci-openclash
 
 sed -i 's/login/login -f root/g' feeds/packages/utils/ttyd/files/ttyd.config
 sed -i 's/\${interface:+-i \$interface\}/#\${interface:+-i \$interface\}/g' feeds/packages/utils/ttyd/files/ttyd.init
@@ -763,20 +763,20 @@ config rule_providers
 	option group 'DIRECT'
 
 
-' >package/lean/luci-app-openclash/root/etc/config/openclash
-mkdir -p package/lean/luci-app-openclash/root/etc/openclash/core
+' >package/emortal/luci-app-openclash/root/etc/config/openclash
+mkdir -p package/emortal/luci-app-openclash/root/etc/openclash/core
 if ${CLASH_META_REPOS_VERNESONG}; then
   curl --retry 5 -L https://github.com/vernesong/OpenClash/raw/core/dev/smart/clash-linux-${CPU_MODEL}.tar.gz | tar zxf -
-  mv clash package/lean/luci-app-openclash/root/etc/openclash/core/clash_meta
+  mv clash package/emortal/luci-app-openclash/root/etc/openclash/core/clash_meta
 else
   CLASH_META_VERSION="$(curl --retry 5 -L https://api.github.com/repos/MetaCubeX/mihomo/releases/latest 2>/dev/null|grep -E 'tag_name' |grep -E 'v[0-9.]+' -o 2>/dev/null)"
   curl --retry 5 -L https://github.com/MetaCubeX/mihomo/releases/download/${CLASH_META_VERSION}/mihomo-linux-amd64-${CLASH_META_VERSION}.gz -O
   gzip -d mihomo-linux-amd64-${CLASH_META_VERSION}.gz
-  mv mihomo-linux-amd64-${CLASH_META_VERSION} package/lean/luci-app-openclash/root/etc/openclash/core/clash_meta
+  mv mihomo-linux-amd64-${CLASH_META_VERSION} package/emortal/luci-app-openclash/root/etc/openclash/core/clash_meta
 fi
-chmod +x package/lean/luci-app-openclash/root/etc/openclash/core/clash_meta
-curl --retry 5 -L https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download/geoip.dat -o package/lean/luci-app-openclash/root/etc/openclash/GeoIP.dat
-curl --retry 5 -L https://github.com/vernesong/mihomo/releases/download/LightGBM-Model/Model-large.bin -o package/lean/luci-app-openclash/root/etc/openclash/Model.bin
+chmod +x package/emortal/luci-app-openclash/root/etc/openclash/core/clash_meta
+curl --retry 5 -L https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download/geoip.dat -o package/emortal/luci-app-openclash/root/etc/openclash/GeoIP.dat
+curl --retry 5 -L https://github.com/vernesong/mihomo/releases/download/LightGBM-Model/Model-large.bin -o package/emortal/luci-app-openclash/root/etc/openclash/Model.bin
 echo '
 
 config smartdns
