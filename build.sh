@@ -63,6 +63,19 @@ cd $GITHUB_WORKSPACE/openwrt
 make download -j$(nproc) || make download -j1 V=s
 find dl -size -1024c -exec rm -f {} \;
 find dl -size 0 -exec rm -f {} \;
+# Fix Ruby 3.1 bundled gems LoadError (optparse/fileutils/erb)
+# Ruby 3.1 stdlib → bundled gems; OpenWrt --disable=gems breaks host build
+# Fix: use system Ruby (Docker ruby 3.0) as BASERUBY
+RUBY_MAKEFILE="$GITHUB_WORKSPACE/openwrt/build_dir/hostpkg/ruby-3.1.2/Makefile"
+RUBY_MK="$GITHUB_WORKSPACE/openwrt/build_dir/hostpkg/ruby-3.1.2/uncommon.mk"
+if [ -f "$RUBY_MAKEFILE" ]; then
+  echo "🔧 Patching Ruby 3.1 host build (system Ruby as BASERUBY)..."
+  sed -i 's|BASERUBY = .*|BASERUBY = /usr/bin/ruby |' "$RUBY_MAKEFILE"
+  sed -i '1191s|.*|\\t$(Q) echo "" > $@|' "$RUBY_MK" 2>/dev/null || true
+  echo "✅ Ruby host build patch applied."
+else
+  echo "⏭️ Ruby source not yet extracted; will skip patch."
+fi
 make -j$(nproc) || make -j1 || make -j1 V=s
 
 cp -f .config ${GITHUB_WORKSPACE}/${CONFIG_FILE}
