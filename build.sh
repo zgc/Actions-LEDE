@@ -52,6 +52,19 @@ make defconfig
 
 make package/luci-base/host/compile -j$(nproc) || make package/luci-base/host/compile -j1 V=s
 
+# Pre-build Ruby host patch: apply BEFORE the main make starts
+RUBY_MAKEFILE="$GITHUB_WORKSPACE/openwrt/build_dir/hostpkg/ruby-3.1.2/Makefile"
+RUBY_MK="$GITHUB_WORKSPACE/openwrt/build_dir/hostpkg/ruby-3.1.2/uncommon.mk"
+if [ -f "$RUBY_MAKEFILE" ]; then
+  echo "🔧 Pre-patching Ruby 3.1 host build (system Ruby as BASERUBY)..."
+  sed -i 's|BASERUBY = .*|BASERUBY = /usr/bin/ruby |' "$RUBY_MAKEFILE"
+  # Delete the file2lastrev.rb target entirely (line with file2lastrev.rb)
+  sed -i '/file2lastrev\.rb/!b;N;d' "$RUBY_MK" 2>/dev/null || true
+  echo "✅ Ruby host build patch applied before main build."
+else
+  echo "⏭️ Ruby source not yet extracted; will patch later."
+fi
+
 popd
 chmod +x $DIY_P2_SH
 cd openwrt
@@ -61,9 +74,23 @@ make defconfig
 
 cd $GITHUB_WORKSPACE/openwrt
 make download -j$(nproc) || make download -j1 V=s
-find dl -size -1024c -exec rm -f {} \;
-find dl -size 0 -exec rm -f {} \;
-make -j$(nproc) || make -j1 || make -j1 V=s
+find dl -not -path "dl/go-mod-cache/*" -size -1024c -exec rm -f {} \;
+find dl -not -path "dl/go-mod-cache/*" -size 0 -exec rm -f {} \;
+# Fix Ruby 3.1 bundled gems LoadError (optparse/fileutils/erb)
+# Ruby 3.1 stdlib → bundled gems; OpenWrt --disable=gems breaks host build
+# Fix: use system Ruby (Docker ruby 3.0) as BASERUBY
+RUBY_MAKEFILE="$GITHUB_WORKSPACE/openwrt/build_dir/hostpkg/ruby-3.1.2/Makefile"
+RUBY_MK="$GITHUB_WORKSPACE/openwrt/build_dir/hostpkg/ruby-3.1.2/uncommon.mk"
+if [ -f "$RUBY_MAKEFILE" ]; then
+  echo "🔧 Patching Ruby 3.1 host build (system Ruby as BASERUBY)..."
+  sed -i 's|BASERUBY = .*|BASERUBY = /usr/bin/ruby |' "$RUBY_MAKEFILE"
+  # Delete the file2lastrev.rb target entirely (line with file2lastrev.rb)
+  sed -i '/file2lastrev\.rb/!b;N;d' "$RUBY_MK" 2>/dev/null || true
+  echo "✅ Ruby host build patch applied."
+else
+  echo "⏭️ Ruby source not yet extracted; will skip patch."
+fi
+make -j4 || make -j2 V=s
 
 cp -f .config ${GITHUB_WORKSPACE}/${CONFIG_FILE}
 
