@@ -88,7 +88,7 @@ if [ -f "$RUBY_MAKEFILE" ]; then
 else
   echo "⏭️ Ruby source not yet extracted; will skip patch."
 fi
-make -j$(nproc) || make -j1 V=s
+make -j$(nproc) || make -j2 V=s
 
 cp -f .config ${GITHUB_WORKSPACE}/${CONFIG_FILE}
 
