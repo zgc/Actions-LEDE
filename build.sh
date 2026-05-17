@@ -96,7 +96,7 @@ cp -f .config ${GITHUB_WORKSPACE}/${CONFIG_FILE}
 
 cd $GITHUB_WORKSPACE/openwrt/bin/targets/*/*
 cp -f config.buildinfo ${GITHUB_WORKSPACE}/${CONFIG_FILE}
-ls -A *.img.gz 2>/dev/null && cp -f *.img.gz ${GITHUB_WORKSPACE}/release/x86_64.img.gz
-ls -A *.manifest 2>/dev/null && cp -f *.manifest ${GITHUB_WORKSPACE}/release/x86_64.manifest
+ls -A *.img.gz 2>/dev/null && cp -f *.img.gz ${GITHUB_WORKSPACE}/release/
+ls -A *.manifest 2>/dev/null && cp -f *.manifest ${GITHUB_WORKSPACE}/release/
 cd ${GITHUB_WORKSPACE}/release
 ls *.img.gz 2>/dev/null
