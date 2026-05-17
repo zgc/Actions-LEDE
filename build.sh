@@ -90,13 +90,50 @@ if [ -f "$RUBY_MAKEFILE" ]; then
 else
   echo "⏭️ Ruby source not yet extracted; will skip patch."
 fi
+# Set GOPROXY for Go modules (fix frp build failure)
+export GOPROXY=https://goproxy.cn,https://goproxy.io,direct
+export GONOSUMCHECK=*
+export GOSUMDB=off
+
+# Fix GCC 8.4.0 libiberty compilation errors (missing headers in newer GCC host)
+# Patch the source archive BEFORE make starts so it's baked in
+GCC_TARBALL="$GITHUB_WORKSPACE/openwrt/dl/gcc-8.4.0.tar.xz"
+if [ -f "$GCC_TARBALL" ]; then
+  echo "🔧 Patching GCC 8.4.0 libiberty headers in tarball..."
+  TMPDIR=$(mktemp -d)
+  tar xJf "$GCC_TARBALL" -C "$TMPDIR" 2>/dev/null
+  FIBHEAP="$TMPDIR/gcc-8.4.0/libiberty/fibheap.c"
+  REGEX="$TMPDIR/gcc-8.4.0/libiberty/regex.c"
+  if [ -f "$FIBHEAP" ] && ! grep -q '#include <limits.h>' "$FIBHEAP"; then
+    sed -i '/#include "fibheap\.h"/a #include <limits.h>\n#include <string.h>' "$FIBHEAP"
+    echo "✅ fibheap.c patched"
+  fi
+  if [ -f "$REGEX" ] && ! grep -q '#include <stdlib.h>' "$REGEX"; then
+    sed -i '/#include <string\.h>/a #include <stdlib.h>' "$REGEX"
+    echo "✅ regex.c patched"
+  fi
+  tar cJf "$GCC_TARBALL" -C "$TMPDIR" gcc-8.4.0 2>/dev/null
+  rm -rf "$TMPDIR"
+  echo "✅ GCC 8.4.0 tarball patched."
+else
+  echo "⏭️ GCC tarball not yet downloaded; skipping patch."
+fi
+
 make -j4 || make -j2 V=s
 
 cp -f .config ${GITHUB_WORKSPACE}/${CONFIG_FILE}
 
-cd $GITHUB_WORKSPACE/openwrt/bin/targets/*/*
-cp -f config.buildinfo ${GITHUB_WORKSPACE}/${CONFIG_FILE}
-ls -A *.img.gz 2>/dev/null && cp -f *.img.gz ${GITHUB_WORKSPACE}/release/x86_64.img.gz
-ls -A *.manifest 2>/dev/null && cp -f *.manifest ${GITHUB_WORKSPACE}/release/x86_64.manifest
-cd ${GITHUB_WORKSPACE}/release
+mkdir -p $RELEASE_DIR
+pushd openwrt/bin/targets/*/*
+cp -f config.buildinfo $RELEASE_DIR
+cp -f $(ls -1 ./*img.gz | head -1) $RELEASE_DIR/$RELEASE_NAME.img.gz
+if [ -f *.manifest ]; then
+  cp -f *.manifest $RELEASE_DIR/$RELEASE_NAME.manifest
+fi
+popd
+
+pushd $RELEASE_DIR
+md5sum $RELEASE_NAME.img.gz > $RELEASE_NAME.img.gz.md5 2>/dev/null || true
+gzip -dc $RELEASE_NAME.img.gz | md5sum | sed "s/-/$RELEASE_NAME.img/" > $RELEASE_NAME.img.md5 2>/dev/null || true
 ls *.img.gz 2>/dev/null
+popd

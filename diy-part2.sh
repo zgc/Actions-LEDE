@@ -24,8 +24,17 @@ sed -i "s/\$(TOPDIR)\/luci.mk/\$(TOPDIR)\/feeds\/luci\/luci.mk/g" feeds/luci/the
 
 rm -rf feeds/packages/net/smartdns/conf
 mkdir -p feeds/packages/net/smartdns/conf
-sed -i 's/PKG_BUILD_DIR)\/package\/openwrt\/custom.conf/CURDIR)\/conf\/custom.conf/g' feeds/packages/net/smartdns/Makefile
-sed -i 's/PKG_BUILD_DIR)\/package\/openwrt\/files\/etc\/config\/smartdns/CURDIR)\/conf\/smartdns.conf/g' feeds/packages/net/smartdns/Makefile
+# Use local conf files instead of remote curl (more reliable)
+cat > feeds/packages/net/smartdns/conf/custom.conf << 'CUSTOM_EOF'
+# SmartDNS custom configuration
+CUSTOM_EOF
+
+cat > feeds/packages/net/smartdns/conf/smartdns.conf << 'SMARTDNS_EOF'
+# SmartDNS default configuration
+SMARTDNS_EOF
+sed -i 's/PKG_BUILD_DIR)\\/package\\/openwrt\\/custom.conf/\$(CURDIR)\\/conf\\/custom.conf/g' feeds/packages/net/smartdns/Makefile
+sed -i 's/PKG_BUILD_DIR)\\/package\\/openwrt\\/files\\/etc\\/config\\/smartdns/\$(CURDIR)\\/conf\\/smartdns.conf/g' feeds/packages/net/smartdns/Makefile
+sed -i '/include ../../lang\/golang\/golang-package.mk/a\
 
 cp $GITHUB_WORKSPACE/scripts/check_smartdns_connect.sh package/base-files/files/etc
 cp $GITHUB_WORKSPACE/scripts/check_openclash_connect.sh package/base-files/files/etc
@@ -963,6 +972,26 @@ config ip-rule
 ' >feeds/packages/net/smartdns/conf/smartdns.conf
 
 curl --retry 5 -L https://github.com/pymumu/smartdns/raw/master/package/openwrt/custom.conf -o feeds/packages/net/smartdns/conf/custom.conf
+
+# Fix GCC 8.4.0 libiberty compilation errors (missing headers in newer GCC host)
+# fibheap.c needs limits.h and string.h; regex.c needs stdlib.h
+GCC_LIBIBERTY_DIR="build_dir/toolchain-x86_64_gcc-8.4.0_musl/gcc-8.4.0/libiberty"
+if [ -d "$GCC_LIBIBERTY_DIR" ]; then
+  echo "🔧 Patching GCC 8.4.0 libiberty headers..."
+  FIBHEAP="$GCC_LIBIBERTY_DIR/fibheap.c"
+  if [ -f "$FIBHEAP" ] && ! grep -q '#include <limits.h>' "$FIBHEAP"; then
+    sed -i '/#include "fibheap\.h"/a #include <limits.h>\n#include <string.h>' "$FIBHEAP"
+    echo "✅ fibheap.c patched"
+  fi
+  REGEX="$GCC_LIBIBERTY_DIR/regex.c"
+  if [ -f "$REGEX" ] && ! grep -q '#include <stdlib.h>' "$REGEX"; then
+    sed -i '/#include <string\.h>/a #include <stdlib.h>' "$REGEX"
+    echo "✅ regex.c patched"
+  fi
+  echo "✅ GCC 8.4.0 libiberty headers patched."
+else
+  echo "⏭️ GCC libiberty not yet extracted; will patch during make."
+fi
 
 #latest_ver="$(curl --retry 5 https://api.github.com/repos/AdguardTeam/AdGuardHome/releases/latest 2>/dev/null|grep -E 'tag_name' |grep -E 'v[0-9.]+' -o 2>/dev/null)"
 #curl --retry 5 -L https://github.com/AdguardTeam/AdGuardHome/releases/download/${latest_ver}/AdGuardHome_linux_${Arch}.tar.gz | tar zxf -

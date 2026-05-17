@@ -3,6 +3,9 @@ FROM ubuntu:22.04
 ENV DEBIAN_FRONTEND=noninteractive
 ENV TZ=Asia/Shanghai
 ENV FORCE_UNSAFE_CONFIGURE=1
+ENV GOPROXY=https://goproxy.cn,https://goproxy.io,direct
+ENV GONOSUMCHECK=*
+ENV GOSUMDB=off
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential ccache ca-certificates clang cmake cpio curl device-tree-compiler \
