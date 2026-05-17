@@ -58,7 +58,8 @@ RUBY_MK="$GITHUB_WORKSPACE/openwrt/build_dir/hostpkg/ruby-3.1.2/uncommon.mk"
 if [ -f "$RUBY_MAKEFILE" ]; then
   echo "🔧 Pre-patching Ruby 3.1 host build (system Ruby as BASERUBY)..."
   sed -i 's|BASERUBY = .*|BASERUBY = /usr/bin/ruby |' "$RUBY_MAKEFILE"
-  sed -i '1191s|.*|\t\$(Q) echo "" > \$@|' "$RUBY_MK" 2>/dev/null || true
+  # Delete the file2lastrev.rb target entirely (line with file2lastrev.rb)
+  sed -i '/file2lastrev\.rb/!b;N;d' "$RUBY_MK" 2>/dev/null || true
   echo "✅ Ruby host build patch applied before main build."
 else
   echo "⏭️ Ruby source not yet extracted; will patch later."
@@ -83,7 +84,8 @@ RUBY_MK="$GITHUB_WORKSPACE/openwrt/build_dir/hostpkg/ruby-3.1.2/uncommon.mk"
 if [ -f "$RUBY_MAKEFILE" ]; then
   echo "🔧 Patching Ruby 3.1 host build (system Ruby as BASERUBY)..."
   sed -i 's|BASERUBY = .*|BASERUBY = /usr/bin/ruby |' "$RUBY_MAKEFILE"
-  sed -i '1191s|.*|\\t$(Q) echo "" > $@|' "$RUBY_MK" 2>/dev/null || true
+  # Delete the file2lastrev.rb target entirely (line with file2lastrev.rb)
+  sed -i '/file2lastrev\.rb/!b;N;d' "$RUBY_MK" 2>/dev/null || true
   echo "✅ Ruby host build patch applied."
 else
   echo "⏭️ Ruby source not yet extracted; will skip patch."
