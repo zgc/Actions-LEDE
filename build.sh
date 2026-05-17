@@ -52,6 +52,18 @@ make defconfig
 
 make package/luci-base/host/compile -j$(nproc) || make package/luci-base/host/compile -j1 V=s
 
+# Pre-build Ruby host patch: apply BEFORE the main make starts
+RUBY_MAKEFILE="$GITHUB_WORKSPACE/openwrt/build_dir/hostpkg/ruby-3.1.2/Makefile"
+RUBY_MK="$GITHUB_WORKSPACE/openwrt/build_dir/hostpkg/ruby-3.1.2/uncommon.mk"
+if [ -f "$RUBY_MAKEFILE" ]; then
+  echo "🔧 Pre-patching Ruby 3.1 host build (system Ruby as BASERUBY)..."
+  sed -i 's|BASERUBY = .*|BASERUBY = /usr/bin/ruby |' "$RUBY_MAKEFILE"
+  sed -i '1191s|.*|\t\$(Q) echo "" > \$@|' "$RUBY_MK" 2>/dev/null || true
+  echo "✅ Ruby host build patch applied before main build."
+else
+  echo "⏭️ Ruby source not yet extracted; will patch later."
+fi
+
 popd
 chmod +x $DIY_P2_SH
 cd openwrt
@@ -76,7 +88,7 @@ if [ -f "$RUBY_MAKEFILE" ]; then
 else
   echo "⏭️ Ruby source not yet extracted; will skip patch."
 fi
-make -j$(nproc) || make -j1 || make -j1 V=s
+make -j$(nproc) || make -j1 V=s
 
 cp -f .config ${GITHUB_WORKSPACE}/${CONFIG_FILE}
 
