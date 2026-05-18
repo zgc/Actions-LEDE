@@ -21,25 +21,41 @@ git clone --depth 1 -b $LUCI_BRANCH https://github.com/jerrykuku/luci-theme-argo
 rm -rf package/emortal/luci-app-argon-config
 git clone --depth 1 -b $LUCI_BRANCH https://github.com/jerrykuku/luci-app-argon-config.git package/emortal/luci-app-argon-config
 
-# 3. openclash（完整克隆后提取）
+# 3. openclash（sparse checkout 省空间）
 rm -rf package/emortal/luci-app-openclash /tmp/openclash-tmp
-git clone --depth 1 -b $OPENCLASH_BRANCH https://github.com/vernesong/OpenClash.git /tmp/openclash-tmp
+mkdir -p /tmp/openclash-tmp
+git clone --depth 1 -b $OPENCLASH_BRANCH --filter=blob:none --sparse https://github.com/vernesong/OpenClash.git --no-checkout /tmp/openclash-tmp
+pushd /tmp/openclash-tmp
+git sparse-checkout init --cone
+echo "luci-app-openclash" >> .git/info/sparse-checkout
+git checkout
+popd
 mv /tmp/openclash-tmp/luci-app-openclash package/emortal/luci-app-openclash
 rm -rf /tmp/openclash-tmp
 
 # 4. ZeroTier 1.14.2
-# 4.1 zerotier 包（coolsnowwolf/packages 特定 commit）
+# 4.1 zerotier 包（coolsnowwolf/packages 特定 commit，sparse checkout 省空间）
 rm -rf package/emortal/zerotier /tmp/coolsnowwolf-pkg
-git clone https://github.com/coolsnowwolf/packages.git /tmp/coolsnowwolf-pkg
+mkdir -p /tmp/coolsnowwolf-pkg
+git clone --filter=blob:none --sparse https://github.com/coolsnowwolf/packages.git --no-checkout /tmp/coolsnowwolf-pkg
 cd /tmp/coolsnowwolf-pkg
 git checkout 01e5467f06d049a1e15637ae86306602c89e8a4c
+git sparse-checkout init --cone
+echo "net/zerotier" >> .git/info/sparse-checkout
+git checkout
 cd $GITHUB_WORKSPACE
 mv /tmp/coolsnowwolf-pkg/net/zerotier package/emortal/zerotier
 rm -rf /tmp/coolsnowwolf-pkg
 
-# 4.2 luci-app-zerotier（coolsnowwolf/luci master 分支）
+# 4.2 luci-app-zerotier（coolsnowwolf/luci master 分支，sparse checkout 省空间）
 rm -rf package/emortal/luci-app-zerotier /tmp/coolsnowwolf-luci
-git clone --depth 1 https://github.com/coolsnowwolf/luci.git /tmp/coolsnowwolf-luci
+mkdir -p /tmp/coolsnowwolf-luci
+git clone --depth 1 --filter=blob:none --sparse https://github.com/coolsnowwolf/luci.git --no-checkout /tmp/coolsnowwolf-luci
+pushd /tmp/coolsnowwolf-luci
+git sparse-checkout init --cone
+echo "applications/luci-app-zerotier" >> .git/info/sparse-checkout
+git checkout
+popd
 mv /tmp/coolsnowwolf-luci/applications/luci-app-zerotier package/emortal/luci-app-zerotier
 rm -rf /tmp/coolsnowwolf-luci
 

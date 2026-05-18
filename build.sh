@@ -90,13 +90,26 @@ if [ -f "$RUBY_MAKEFILE" ]; then
 else
   echo "⏭️ Ruby source not yet extracted; will skip patch."
 fi
+# Set GOPROXY for Go modules (fix frp build failure)
+export GOPROXY=https://goproxy.cn,https://goproxy.io,direct
+export GONOSUMCHECK=*
+export GOSUMDB=off
+
 make -j4 || make -j2 V=s
 
 cp -f .config ${GITHUB_WORKSPACE}/${CONFIG_FILE}
 
-cd $GITHUB_WORKSPACE/openwrt/bin/targets/*/*
-cp -f config.buildinfo ${GITHUB_WORKSPACE}/${CONFIG_FILE}
-ls -A *.img.gz 2>/dev/null && cp -f *.img.gz ${GITHUB_WORKSPACE}/release/
-ls -A *.manifest 2>/dev/null && cp -f *.manifest ${GITHUB_WORKSPACE}/release/
-cd ${GITHUB_WORKSPACE}/release
+mkdir -p $RELEASE_DIR
+pushd openwrt/bin/targets/*/*
+cp -f config.buildinfo $RELEASE_DIR
+cp -f $(ls -1 ./*img.gz | head -1) $RELEASE_DIR/$RELEASE_NAME.img.gz
+if [ -f *.manifest ]; then
+  cp -f *.manifest $RELEASE_DIR/$RELEASE_NAME.manifest
+fi
+popd
+
+pushd $RELEASE_DIR
+md5sum $RELEASE_NAME.img.gz > $RELEASE_NAME.img.gz.md5 2>/dev/null || true
+gzip -dc $RELEASE_NAME.img.gz | md5sum | sed "s/-/$RELEASE_NAME.img/" > $RELEASE_NAME.img.md5 2>/dev/null || true
 ls *.img.gz 2>/dev/null
+popd
