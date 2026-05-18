@@ -124,13 +124,23 @@ make -j4 || make -j2 V=s
 cp -f .config ${GITHUB_WORKSPACE}/${CONFIG_FILE}
 
 mkdir -p $RELEASE_DIR
-pushd openwrt/bin/targets/*/*
-cp -f config.buildinfo $RELEASE_DIR
-cp -f $(ls -1 ./*img.gz | head -1) $RELEASE_DIR/$RELEASE_NAME.img.gz
-if [ -f *.manifest ]; then
-  cp -f *.manifest $RELEASE_DIR/$RELEASE_NAME.manifest
+# Copy firmware to release directory (robust path resolution)
+mkdir -p $RELEASE_DIR
+FIRMWARE_DIR=$(find openwrt/bin/targets -type d -name "64" -o -type d -name "generic" | head -1)
+if [ -z "$FIRMWARE_DIR" ]; then
+  FIRMWARE_DIR=$(find openwrt/bin/targets -mindepth 2 -maxdepth 3 -type d | grep -v packages | head -1)
 fi
-popd
+echo "📦 Firmware directory: $FIRMWARE_DIR"
+if [ -d "$FIRMWARE_DIR" ]; then
+  cd "$FIRMWARE_DIR"
+  cp -f config.buildinfo $RELEASE_DIR/ 2>/dev/null || true
+  cp -f $(ls -1 ./*img.gz | head -1) $RELEASE_DIR/$RELEASE_NAME.img.gz
+  if [ -f *.manifest ]; then
+    cp -f *.manifest $RELEASE_DIR/$RELEASE_NAME.manifest
+  fi
+else
+  echo "❌ Firmware directory not found!"
+fi
 
 pushd $RELEASE_DIR
 md5sum $RELEASE_NAME.img.gz > $RELEASE_NAME.img.gz.md5 2>/dev/null || true
