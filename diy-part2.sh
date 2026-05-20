@@ -34,8 +34,6 @@ cat > feeds/packages/net/smartdns/conf/smartdns.conf << 'SMARTDNS_EOF'
 SMARTDNS_EOF
 sed -i 's/PKG_BUILD_DIR)\\/package\\/openwrt\\/custom.conf/\$(CURDIR)\\/conf\\/custom.conf/g' feeds/packages/net/smartdns/Makefile
 sed -i 's/PKG_BUILD_DIR)\\/package\\/openwrt\\/files\\/etc\\/config\\/smartdns/\$(CURDIR)\\/conf\\/smartdns.conf/g' feeds/packages/net/smartdns/Makefile
-sed -i '/include ../../lang\/golang\/golang-package.mk/a\
-
 cp $GITHUB_WORKSPACE/scripts/check_smartdns_connect.sh package/base-files/files/etc
 cp $GITHUB_WORKSPACE/scripts/check_openclash_connect.sh package/base-files/files/etc
 cp $GITHUB_WORKSPACE/scripts/check_wan_connect.sh package/base-files/files/etc
@@ -50,11 +48,13 @@ chmod +x package/base-files/files/etc/reset_get_img.sh
 chmod +x package/base-files/files/etc/reset_latest.sh
 chmod +x package/base-files/files/etc/reset_offline.sh
 chmod +x package/base-files/files/etc/reset_upload.sh
-sed -i '/exit 0/i\if [[ "$(cat /etc/crontabs/root | grep "/etc/check_smartdns_connect.sh")" = "" ]]; then echo "#*/5 * * * * /etc/check_smartdns_connect.sh" >> /etc/crontabs/root; fi' package/emortal/default-settings/files/zzz-default-settings
-sed -i '/exit 0/i\if [[ "$(cat /etc/crontabs/root | grep "/etc/check_openclash_connect.sh")" = "" ]]; then echo "#*/5 * * * * /etc/check_openclash_connect.sh" >> /etc/crontabs/root; fi' package/emortal/default-settings/files/zzz-default-settings
-sed -i '/exit 0/i\if [[ "$(cat /etc/crontabs/root | grep "/etc/check_wan_connect.sh")" = "" ]]; then echo "#*/5 * * * * /etc/check_wan_connect.sh" >> /etc/crontabs/root; fi' package/emortal/default-settings/files/zzz-default-settings
+cat >> package/emortal/default-settings/files/99-default-settings << 'CRONEOF'
+if [[ "$(cat /etc/crontabs/root | grep "/etc/check_smartdns_connect.sh")" = "" ]]; then echo "#*/5 * * * * /etc/check_smartdns_connect.sh" >> /etc/crontabs/root; fi
+if [[ "$(cat /etc/crontabs/root | grep "/etc/check_openclash_connect.sh")" = "" ]]; then echo "#*/5 * * * * /etc/check_openclash_connect.sh" >> /etc/crontabs/root; fi
+if [[ "$(cat /etc/crontabs/root | grep "/etc/check_wan_connect.sh")" = "" ]]; then echo "#*/5 * * * * /etc/check_wan_connect.sh" >> /etc/crontabs/root; fi
+CRONEOF
 
-sed -i '/uci commit luci/i\uci set luci.main.mediaurlbase="/luci-static/argon"' package/emortal/default-settings/files/zzz-default-settings
+sed -i '/uci commit luci/i\uci set luci.main.mediaurlbase="/luci-static/argon"' package/emortal/default-settings/files/99-default-settings
 
 sed -i "s/uci -q set openclash.config.enable=0/uci -q set openclash.config.enable=\$(cat \/etc\/config\/openclash | grep -m 1 \"option enable\" | cut -d: -f2 | awk '{ print \$3}' | cut -d \"'\" -f 2)/g" package/emortal/luci-app-openclash/root/etc/uci-defaults/luci-openclash
 
