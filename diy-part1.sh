@@ -27,7 +27,7 @@ mkdir -p /tmp/openclash-tmp
 git clone --depth 1 -b $OPENCLASH_BRANCH --filter=blob:none --sparse https://github.com/vernesong/OpenClash.git --no-checkout /tmp/openclash-tmp
 pushd /tmp/openclash-tmp
 git sparse-checkout init --cone
-echo "luci-app-openclash" >> .git/info/sparse-checkout
+git sparse-checkout set luci-app-openclash
 git checkout
 popd
 mv /tmp/openclash-tmp/luci-app-openclash package/emortal/luci-app-openclash
@@ -41,9 +41,9 @@ git clone --filter=blob:none --sparse https://github.com/coolsnowwolf/packages.g
 cd /tmp/coolsnowwolf-pkg
 git checkout 01e5467f06d049a1e15637ae86306602c89e8a4c
 git sparse-checkout init --cone
-echo "net/zerotier" >> .git/info/sparse-checkout
-git checkout
-cd $GITHUB_WORKSPACE
+git sparse-checkout set net/zerotier
+git checkout 01e5467f06d049a1e15637ae86306602c89e8a4c
+cd $GITHUB_WORKSPACE/openwrt
 mv /tmp/coolsnowwolf-pkg/net/zerotier package/emortal/zerotier
 rm -rf /tmp/coolsnowwolf-pkg
 
@@ -53,7 +53,7 @@ mkdir -p /tmp/coolsnowwolf-luci
 git clone --depth 1 --filter=blob:none --sparse https://github.com/coolsnowwolf/luci.git --no-checkout /tmp/coolsnowwolf-luci
 pushd /tmp/coolsnowwolf-luci
 git sparse-checkout init --cone
-echo "applications/luci-app-zerotier" >> .git/info/sparse-checkout
+git sparse-checkout set applications/luci-app-zerotier
 git checkout
 popd
 mv /tmp/coolsnowwolf-luci/applications/luci-app-zerotier package/emortal/luci-app-zerotier
