@@ -62,41 +62,115 @@ GITHUB_WORKSPACE=$GITHUB_WORKSPACE $GITHUB_WORKSPACE/$DIY_P2_SH
 make defconfig
 
 cd $GITHUB_WORKSPACE/openwrt
+# Fix Ruby 3.1 bundled gems (optparse/fileutils/erb)
+# Ruby 3.1 stdlib → bundled gems; OpenWrt BASERUBY uses --disable=gems → LoadError
+# Root cause: OpenWrt overrides BASERUBY to staging_dir/hostpkg/bin/ruby --disable=gems
+# Fix: patch tool/generic_erb.rb to re-exec with /usr/bin/ruby (Ruby 3.0, erb=default gem)
+# when the current Ruby can't load erb. Also patch uncommon.mk to skip file2lastrev.rb.
+# Ref: commit 658c34c6 (May 17) — original fix that worked, lost in 36d128e8 refactor.
+RUBY_TARBALL="$GITHUB_WORKSPACE/openwrt/dl/ruby-3.1.2.tar.xz"
+RUBY_MAKEFILE="$GITHUB_WORKSPACE/openwrt/feeds/packages/lang/ruby/Makefile"
+RUBY_URL="https://cache.ruby-lang.org/pub/ruby/3.1/ruby-3.1.2.tar.xz"
+
+mkdir -p "$GITHUB_WORKSPACE/openwrt/dl"
+
+if [ -f "$RUBY_MAKEFILE" ]; then
+  # Clean stale Ruby build artifacts from prior failed builds
+  # These may have wrong BASERUBY settings and are owned by root (Docker)
+  RUBY_BUILD_DIR="$GITHUB_WORKSPACE/openwrt/build_dir/hostpkg/ruby-3.1.2"
+  if [ -d "$RUBY_BUILD_DIR" ]; then
+    echo "🧹 Removing stale Ruby build dir to force clean rebuild..."
+    rm -rf "$RUBY_BUILD_DIR"
+  fi
+  # Also clean incomplete staging_dir ruby
+  rm -f "$GITHUB_WORKSPACE/openwrt/staging_dir/hostpkg/bin/ruby" 2>/dev/null
+
+  echo "🔧 Pre-patching Ruby 3.1: download + patch + update PKG_HASH..."
+  curl -fsSL "$RUBY_URL" -o "$RUBY_TARBALL" 2>/dev/null || wget -q "$RUBY_URL" -O "$RUBY_TARBALL"
+  if [ -f "$RUBY_TARBALL" ]; then
+    RUBY_TMP=$(mktemp -d)
+    tar xJf "$RUBY_TARBALL" -C "$RUBY_TMP" 2>/dev/null
+    RUBY_SRC="$RUBY_TMP/ruby-3.1.2"
+    # 1. Patch generic_erb.rb: re-exec with system Ruby if erb not available
+    #    System Ruby 3.0 has erb/optparse/fileutils as default gems.
+    #    This handles the chicken-and-egg: BASERUBY --disable=gems can't load erb,
+    #    but we need erb to generate id.h before miniruby is built.
+    if [ -f "$RUBY_SRC/tool/generic_erb.rb" ]; then
+      # Rewrite generic_erb.rb: insert begin/rescue block after shebang, remove original require
+      # Cannot use sed '1a\n...' — \n after a\\ is not reliable across sed versions
+      {
+        head -1 "$RUBY_SRC/tool/generic_erb.rb"
+        cat <<'ERB_PATCH'
+begin
+  require "erb"
+rescue LoadError
+  exec "/usr/bin/ruby", File.expand_path(__FILE__), *ARGV
+end
+ERB_PATCH
+        tail -n +2 "$RUBY_SRC/tool/generic_erb.rb" | grep -v '^require "erb"$'
+      } > "$RUBY_SRC/tool/generic_erb.rb.tmp"
+      mv "$RUBY_SRC/tool/generic_erb.rb.tmp" "$RUBY_SRC/tool/generic_erb.rb"
+    fi
+    # 2. Remove file2lastrev.rb references from uncommon.mk (bypasses optparse/fileutils)
+    sed -i '/file2lastrev\.rb/!b;N;d' "$RUBY_SRC/uncommon.mk" 2>/dev/null || true
+    # 3. Set BASERUBY to system Ruby in Makefile.in
+    #    (OpenWrt may override this, but the generic_erb.rb fix handles that case)
+    if [ -f "$RUBY_SRC/Makefile.in" ]; then
+      sed -i 's|BASERUBY = .*|BASERUBY = /usr/bin/ruby |' "$RUBY_SRC/Makefile.in"
+    fi
+    # Repack and update hash
+    tar cJf "$RUBY_TARBALL" -C "$RUBY_TMP" ruby-3.1.2 2>/dev/null
+    rm -rf "$RUBY_TMP"
+    NEW_HASH=$(sha256sum "$RUBY_TARBALL" | awk '{print $1}')
+    sed -i "s/^PKG_HASH:=.*/PKG_HASH:=$NEW_HASH/" "$RUBY_MAKEFILE"
+    echo "✅ Ruby 3.1 pre-patched. PKG_HASH=$NEW_HASH"
+  else
+    echo "⚠️ Ruby download failed; make download will handle it"
+  fi
+  # 4. Force BASERUBY to system Ruby via HOST_CONFIGURE_ARGS
+  #    Ruby's configure auto-detects BASERUBY from staging_dir (incomplete prior build)
+  #    which can't load optparse/erb (bundled gems in Ruby 3.1).
+  #    System Ruby 3.0 has them as default gems. --with-baseruby overrides configure.
+  if ! command -v /usr/bin/ruby &>/dev/null; then
+    echo "⚠️ /usr/bin/ruby not found; installing ruby..."
+    apt-get update -qq && apt-get install -y -qq ruby 2>/dev/null || true
+  fi
+  if command -v /usr/bin/ruby &>/dev/null; then
+    if ! grep -q 'with-baseruby' "$RUBY_MAKEFILE"; then
+      sed -i '/^CONFIGURE_ARGS += /i HOST_CONFIGURE_ARGS += --with-baseruby=/usr/bin/ruby' "$RUBY_MAKEFILE"
+      echo "✅ Added --with-baseruby=/usr/bin/ruby to HOST_CONFIGURE_ARGS"
+    fi
+  else
+    echo "⚠️ Could not install Ruby; BASERUBY may fail on bundled gems"
+  fi
+fi
+
 make download -j$(nproc) || make download -j1 V=s
 find dl -not -path "dl/go-mod-cache/*" -size -1024c -exec rm -f {} \;
 find dl -not -path "dl/go-mod-cache/*" -size 0 -exec rm -f {} \;
-# Fix Ruby 3.1 bundled gems LoadError (optparse/fileutils/erb)
-# Ruby 3.1 stdlib → bundled gems; OpenWrt --disable=gems breaks host build
-# Fix: patch the source tarball BEFORE make starts (same strategy as GCC)
-RUBY_TARBALL="$GITHUB_WORKSPACE/openwrt/dl/ruby-3.1.2.tar.xz"
-if [ -f "$RUBY_TARBALL" ]; then
-  echo "🔧 Patching Ruby 3.1 source tarball (system Ruby as BASERUBY)..."
-  RUBY_TMP=$(mktemp -d)
-  tar xJf "$RUBY_TARBALL" -C "$RUBY_TMP" 2>/dev/null
-
-  # 1. Remove --disable[-=]gems from Ruby internal tool scripts (host-compile uses them)
-  find "$RUBY_TMP/ruby-3.1.2/tool" -name '*.rb' -exec sed -i 's/--disable[-=]gems//g' {} +
-
-  # 2. Remove file2lastrev.rb references from uncommon.mk if present
-  sed -i '/file2lastrev\.rb/!b;N;d' "$RUBY_TMP/ruby-3.1.2/uncommon.mk" 2>/dev/null || true
-
-  # 3. Patch BASERUBY in configure-generated Makefile template (Makefile.in)
-  if [ -f "$RUBY_TMP/ruby-3.1.2/Makefile.in" ]; then
-    sed -i 's|BASERUBY = .*|BASERUBY = /usr/bin/ruby |' "$RUBY_TMP/ruby-3.1.2/Makefile.in"
-  fi
-
-  # Repack the tarball (overwrite in-place)
-  tar cJf "$RUBY_TARBALL" -C "$RUBY_TMP" ruby-3.1.2 2>/dev/null
-  rm -rf "$RUBY_TMP"
-  echo "✅ Ruby 3.1 source tarball patched."
-else
-  echo "⏭️ Ruby tarball not yet downloaded; skipping patch."
-fi
 
 # Also patch any previously extracted Ruby build (incremental builds)
+# The tarball pre-patch handles fresh builds, but incremental builds may have
+# the original generic_erb.rb. Apply the same fix: re-exec with system Ruby.
 RUBY_BUILD="$GITHUB_WORKSPACE/openwrt/build_dir/hostpkg/ruby-3.1.2"
 if [ -d "$RUBY_BUILD/tool" ]; then
-  find "$RUBY_BUILD/tool" -name '*.rb' -exec sed -i 's/--disable[-=]gems//g' {} +
+  if [ -f "$RUBY_BUILD/tool/generic_erb.rb" ]; then
+    if ! grep -q 'rescue LoadError' "$RUBY_BUILD/tool/generic_erb.rb"; then
+      {
+        head -1 "$RUBY_BUILD/tool/generic_erb.rb"
+        cat <<'ERB_PATCH'
+begin
+  require "erb"
+rescue LoadError
+  exec "/usr/bin/ruby", File.expand_path(__FILE__), *ARGV
+end
+ERB_PATCH
+        tail -n +2 "$RUBY_BUILD/tool/generic_erb.rb" | grep -v '^require "erb"$'
+      } > "$RUBY_BUILD/tool/generic_erb.rb.tmp"
+      mv "$RUBY_BUILD/tool/generic_erb.rb.tmp" "$RUBY_BUILD/tool/generic_erb.rb"
+    fi
+  fi
+  sed -i '/file2lastrev\.rb/!b;N;d' "$RUBY_BUILD/uncommon.mk" 2>/dev/null || true
   if [ -f "$RUBY_BUILD/Makefile" ]; then
     sed -i 's|BASERUBY = .*|BASERUBY = /usr/bin/ruby |' "$RUBY_BUILD/Makefile"
   fi
@@ -130,7 +204,9 @@ else
   echo "⏭️ GCC tarball not yet downloaded; skipping patch."
 fi
 
-make -j4 || make -j2 V=s
+# Drop caches to free memory before compilation (prevents OOM in Docker)
+sync; echo 3 > /proc/sys/vm/drop_caches 2>/dev/null || true
+make -j2 || make -j1 V=s
 
 cp -f .config ${GITHUB_WORKSPACE}/${CONFIG_FILE}
 
