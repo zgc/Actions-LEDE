@@ -2,6 +2,15 @@
 /openwrt/
 /openwrt.bak.*/
 
+# Download cache
+/dl/
+
+# Docker build artifacts
+/docker/openwrt/
+
+# Ccache
+*.ccache
+
 # Build cache & directories
 /cache/
 /staging_dir/
@@ -15,7 +24,6 @@
 # Generated firmware, build artifacts & outputs
 /release/
 /output/
-/openwrt/bin/
 
 # Log files
 *.log
