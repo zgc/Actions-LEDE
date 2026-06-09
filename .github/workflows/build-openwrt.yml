@@ -83,6 +83,20 @@ jobs:
     - name: Checkout
       uses: actions/checkout@main
 
+    - name: Load device config
+      run: |
+        if [ -f device.conf ]; then
+          echo "Loading device.conf..."
+          cat device.conf
+          source device.conf
+          if [ -n "$RELEASE_NAME" ]; then
+            echo "RELEASE_NAME=$RELEASE_NAME" >> $GITHUB_ENV
+            echo "✅ Device: $RELEASE_NAME"
+          fi
+        else
+          echo "No device.conf found, using default RELEASE_NAME"
+        fi
+
     - name: Initialization environment
       env:
         DEBIAN_FRONTEND: noninteractive
@@ -109,6 +123,11 @@ jobs:
         df -hT $PWD
         echo -e "GITHUB_WORKSPACE -> $GITHUB_WORKSPACE"
         df -hT $GITHUB_WORKSPACE
+        # Fix GnuTLS TLS 1.3 handshake failures with GitHub
+        git config --global http.sslVersion tlsv1.2
+        git config --global http.version HTTP/1.1
+        git config --global http.postBuffer 524288000
+        git config --global --add safe.directory '*'
         git clone --depth 1 $REPO_URL -b $REPO_BRANCH openwrt
         [ ! -z $REPO_COMMIT ] && cd openwrt && git pull origin $REPO_COMMIT && git reset --hard $REPO_COMMIT
         ln -sf /workdir/openwrt $GITHUB_WORKSPACE/openwrt
@@ -132,6 +151,27 @@ jobs:
 
     - name: Install feeds
       run: cd openwrt && ./scripts/feeds install -a
+
+    - name: Apply build fixes
+      run: |
+        cd openwrt
+        # turboacc sub-options: defconfig may miss these
+        sed -i 's/# CONFIG_PACKAGE_luci-app-turboacc_INCLUDE_SHORTCUT_FE_CM is not set/CONFIG_PACKAGE_luci-app-turboacc_INCLUDE_SHORTCUT_FE_CM=y/' .config
+        sed -i 's/# CONFIG_PACKAGE_luci-app-turboacc_INCLUDE_SHORTCUT_FE is not set/CONFIG_PACKAGE_luci-app-turboacc_INCLUDE_SHORTCUT_FE=y/' .config
+        sed -i 's/# CONFIG_PACKAGE_luci-app-turboacc_INCLUDE_SHORTCUT_FE_GSO is not set/CONFIG_PACKAGE_luci-app-turboacc_INCLUDE_SHORTCUT_FE_GSO=y/' .config
+        sed -i 's/# CONFIG_PACKAGE_luci-app-turboacc_INCLUDE_NFTFULLCONE is not set/CONFIG_PACKAGE_luci-app-turboacc_INCLUDE_NFTFULLCONE=y/' .config
+        sed -i 's/# CONFIG_PACKAGE_luci-app-turboacc_INCLUDE_DNSFORWARDER is not set/CONFIG_PACKAGE_luci-app-turboacc_INCLUDE_DNSFORWARDER=y/' .config
+        sed -i 's/# CONFIG_PACKAGE_luci-app-turboacc_INCLUDE_DNSPROXY is not set/CONFIG_PACKAGE_luci-app-turboacc_INCLUDE_DNSPROXY=y/' .config
+        # enable zerotier and adguardhome
+        sed -i 's/# CONFIG_PACKAGE_zerotier is not set/CONFIG_PACKAGE_zerotier=y/' .config
+        sed -i 's/# CONFIG_PACKAGE_luci-app-zerotier is not set/CONFIG_PACKAGE_luci-app-zerotier=y/' .config
+        sed -i 's/# CONFIG_PACKAGE_luci-app-adguardhome is not set/CONFIG_PACKAGE_luci-app-adguardhome=y/' .config
+        # turboacc fullcone NAT fix: fw3 bool parser only accepts 1/true/yes, not 2
+        TURBOACC_INIT=$(find feeds -path '*/luci-app-turboacc/root/etc/init.d/turboacc' 2>/dev/null | head -1)
+        if [ -n "$TURBOACC_INIT" ]; then
+          sed -i 's/uci set firewall.@defaults\[0\].fullcone="${fullcone_nat}"/[ "${fullcone_nat}" != "0" ] \&\& uci set firewall.@defaults[0].fullcone="1" || uci set firewall.@defaults[0].fullcone="0"/' "$TURBOACC_INIT"
+          echo "✅ turboacc fullcone NAT fix applied"
+        fi
 
     - name: Pre-compile luci-base (generate po2lmo)
       run: |
@@ -169,6 +209,20 @@ jobs:
       id: compile
       run: |
         cd openwrt
+        # Fix vlmcsd GCC 13 compatibility: $(notdir $(CC)) breaks when CC contains spaces
+        make package/feeds/packages/vlmcsd/prepare 2>/dev/null || true
+        VLMCSD_GNUMAKE=$(ls build_dir/target-*/vlmcsd-*/src/GNUmakefile 2>/dev/null | head -1)
+        if [ -n "$VLMCSD_GNUMAKE" ]; then
+          sed -i 's/notdir $(CC)/lastword $(subst ccache, ,$(CC))/g' "$VLMCSD_GNUMAKE"
+        fi
+        # Pre-compile Go packages with -j1 to avoid race conditions
+        for go_pkg in frpc adguardhome filebrowser; do
+          echo "=== Pre-compiling $go_pkg with -j1 ==="
+          make package/$go_pkg/compile -j1 V=s && echo "✅ $go_pkg done" || {
+            echo "⚠️ $go_pkg failed, retrying..."
+            make package/$go_pkg/compile -j1 V=s && echo "✅ $go_pkg done (retry)" || echo "❌ $go_pkg failed"
+          }
+        done
         echo -e "$(nproc) thread compile"
         make -j$(nproc) || make -j1 || make -j1 V=s
         echo "::set-output name=status::success"
