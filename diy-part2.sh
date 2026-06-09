@@ -32,8 +32,8 @@ CUSTOM_EOF
 cat > feeds/packages/net/smartdns/conf/smartdns.conf << 'SMARTDNS_EOF'
 # SmartDNS default configuration
 SMARTDNS_EOF
-sed -i 's/PKG_BUILD_DIR)\\/package\\/openwrt\\/custom.conf/\$(CURDIR)\\/conf\\/custom.conf/g' feeds/packages/net/smartdns/Makefile
-sed -i 's/PKG_BUILD_DIR)\\/package\\/openwrt\\/files\\/etc\\/config\\/smartdns/\$(CURDIR)\\/conf\\/smartdns.conf/g' feeds/packages/net/smartdns/Makefile
+sed -i 's#PKG_BUILD_DIR)/package/openwrt/custom.conf#CURDIR)/conf/custom.conf#g' feeds/packages/net/smartdns/Makefile
+sed -i 's#PKG_BUILD_DIR)/package/openwrt/files/etc/config/smartdns#CURDIR)/conf/smartdns.conf#g' feeds/packages/net/smartdns/Makefile
 cp $GITHUB_WORKSPACE/scripts/check_smartdns_connect.sh package/base-files/files/etc
 cp $GITHUB_WORKSPACE/scripts/check_openclash_connect.sh package/base-files/files/etc
 cp $GITHUB_WORKSPACE/scripts/check_wan_connect.sh package/base-files/files/etc

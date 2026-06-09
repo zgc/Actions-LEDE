@@ -155,18 +155,33 @@ jobs:
     - name: Apply build fixes
       run: |
         cd openwrt
-        # enable zerotier and adguardhome
-        sed -i 's/# CONFIG_PACKAGE_zerotier is not set/CONFIG_PACKAGE_zerotier=y/' .config
-        sed -i 's/# CONFIG_PACKAGE_luci-app-zerotier is not set/CONFIG_PACKAGE_luci-app-zerotier=y/' .config
-        sed -i 's/# CONFIG_PACKAGE_luci-app-adguardhome is not set/CONFIG_PACKAGE_luci-app-adguardhome=y/' .config
+        # Fix netdata build: disable cloud/ACLK to remove protobuf dependency
+        # Root cause: netdata's #define error(args...) macro conflicts with abseil-cpp headers
+        NETDATA_FEED=feeds/packages/admin/netdata
+        if [ -f "$NETDATA_FEED/Makefile" ]; then
+          sed -i 's/\t--disable-ml$/\t--disable-ml \\\n\t--disable-cloud/' "$NETDATA_FEED/Makefile"
+          echo "✅ netdata: --disable-cloud added"
+        fi
+        # Bump zerotier to 1.16.2 (feeds has 1.16.0, 1.16.2 supports moon natively)
+        ZT_FEED=feeds/packages/net/zerotier
+        if [ -f $ZT_FEED/Makefile ]; then
+          sed -i 's/PKG_VERSION:=1.16.0/PKG_VERSION:=1.16.2/' $ZT_FEED/Makefile
+          ZT_HASH=$(curl -sL "https://codeload.github.com/zerotier/ZeroTierOne/tar.gz/1.16.2" | sha256sum | awk '{print $1}')
+          if [ -n "$ZT_HASH" ] && [ ${#ZT_HASH} -eq 64 ]; then
+            sed -i "s/^PKG_HASH:=.*/PKG_HASH:=$ZT_HASH/" $ZT_FEED/Makefile
+            echo "✅ zerotier bumped to 1.16.2 (hash: ${ZT_HASH:0:12}...)"
+          else
+            echo "⚠️ zerotier hash compute failed, keeping original"
+          fi
+          # Enable config_path for persistent zerotier data (identity, moon, networks)
+          ZT_CONF=$ZT_FEED/files/etc/config/zerotier
+          if [ -f "$ZT_CONF" ]; then
+            sed -i "s/#option config_path '.*'/option config_path '\/etc\/zerotier'/" "$ZT_CONF"
+            echo "✅ zerotier config_path enabled for data persistence"
+          fi
+        fi
+        # zerotier and adguardhome are already enabled in config.seed
 
-    - name: Pre-compile luci-base (generate po2lmo)
-      run: |
-        cd openwrt
-        cp $GITHUB_WORKSPACE/$CONFIG_FILE .config
-        make defconfig
-        echo "Compiling luci-base to generate po2lmo..."
-        make package/luci-base/host/compile -j$(nproc) || make package/luci-base/host/compile -j1 V=s
 
     - name: Load custom configuration
       run: |
@@ -203,7 +218,7 @@ jobs:
           sed -i 's/notdir $(CC)/lastword $(subst ccache, ,$(CC))/g' "$VLMCSD_GNUMAKE"
         fi
         # Pre-compile Go packages with -j1 to avoid race conditions
-        for go_pkg in frpc adguardhome filebrowser; do
+        for go_pkg in frp adguardhome filebrowser; do
           echo "=== Pre-compiling $go_pkg with -j1 ==="
           make package/$go_pkg/compile -j1 V=s && echo "✅ $go_pkg done" || {
             echo "⚠️ $go_pkg failed, retrying..."

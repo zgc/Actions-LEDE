@@ -42,6 +42,17 @@ DIY_P1_SH="diy-part1.sh"
 DIY_P2_SH="diy-part2.sh"
 
 # ============================================================
+# Section 2.1: Build Prerequisites
+# ============================================================
+
+# python3-setuptools is required by ImmortalWrt's u-boot prereq check
+if ! python3 -c "import setuptools" 2>/dev/null; then
+  echo "⚠️ python3-setuptools missing, installing..."
+  apt-get update -qq && apt-get install -y -qq python3-setuptools > /dev/null 2>&1
+  echo "✅ python3-setuptools installed"
+fi
+
+# ============================================================
 # Section 3: Clone/Pull OpenWrt
 # ============================================================
 
@@ -115,80 +126,68 @@ export GOPROXY=https://goproxy.cn,https://goproxy.io,direct
 export GONOSUMCHECK=*
 export GOSUMDB=off
 
+# Fix netdata build: disable cloud/ACLK to remove protobuf dependency
+# Root cause: netdata's #define error(args...) macro conflicts with abseil-cpp headers
+# (protobuf 29.5 -> abseil-cpp). --disable-cloud removes the protobuf dependency entirely.
+NETDATA_FEED=feeds/packages/admin/netdata
+if [ -f "$NETDATA_FEED/Makefile" ]; then
+  if grep -q '\-\-disable-cloud' "$NETDATA_FEED/Makefile"; then
+    echo "✅ netdata: --disable-cloud already present"
+  else
+    sed -i 's/\t--disable-ml$/\t--disable-ml \\\n\t--disable-cloud/' "$NETDATA_FEED/Makefile"
+    if grep -q '\-\-disable-cloud' "$NETDATA_FEED/Makefile"; then
+      echo "✅ netdata: --disable-cloud added (removes protobuf dependency)"
+    else
+      echo "⚠️ netdata: --disable-cloud not added (--disable-ml pattern changed, manual fix needed)"
+    fi
+  fi
+fi
+
 # Ensure zerotier LuCI is enabled after defconfig
 sed -i 's/# CONFIG_PACKAGE_luci-app-zerotier is not set/CONFIG_PACKAGE_luci-app-zerotier=y/' .config
 sed -i 's/CONFIG_PACKAGE_luci-app-zerotier=m/CONFIG_PACKAGE_luci-app-zerotier=y/' .config
 
-# Bump zerotier to 1.16.2 (feeds has 1.16.0, 1.16.2 supports moon natively)
+# Bump zerotier to 1.16.2 (feeds has older, 1.16.2 supports moon natively)
 ZT_FEED=feeds/packages/net/zerotier
+ZT_VER_TARGET="1.16.2"
 if [ -f $ZT_FEED/Makefile ]; then
-  sed -i 's/PKG_VERSION:=1.16.0/PKG_VERSION:=1.16.2/' $ZT_FEED/Makefile
-  sed -i '/PKG_HASH:=/d' $ZT_FEED/Makefile
-  echo "✅ zerotier bumped to 1.16.2"
+  ZT_VER_CURRENT=$(grep '^PKG_VERSION:=' "$ZT_FEED/Makefile" | head -1 | cut -d= -f2)
+  if [ "$ZT_VER_CURRENT" != "$ZT_VER_TARGET" ]; then
+    sed -i "s/^PKG_VERSION:=$ZT_VER_CURRENT/PKG_VERSION:=$ZT_VER_TARGET/" $ZT_FEED/Makefile
+    # Download and compute correct hash for target version
+    ZT_HASH=$(curl -sL "https://codeload.github.com/zerotier/ZeroTierOne/tar.gz/$ZT_VER_TARGET" | sha256sum | awk '{print $1}')
+    if [ -n "$ZT_HASH" ] && [ ${#ZT_HASH} -eq 64 ]; then
+      sed -i "s/^PKG_HASH:=.*/PKG_HASH:=$ZT_HASH/" $ZT_FEED/Makefile
+      echo "✅ zerotier bumped $ZT_VER_CURRENT → $ZT_VER_TARGET (hash: ${ZT_HASH:0:12}...)"
+    else
+      echo "⚠️ zerotier hash compute failed, reverting version"
+      sed -i "s/^PKG_VERSION:=$ZT_VER_TARGET/PKG_VERSION:=$ZT_VER_CURRENT/" $ZT_FEED/Makefile
+    fi
+  else
+    echo "✅ zerotier already at $ZT_VER_TARGET"
+  fi
+  # Enable config_path for persistent zerotier data (identity, moon, networks)
+  ZT_CONF=$ZT_FEED/files/etc/config/zerotier
+  if [ -f "$ZT_CONF" ]; then
+    sed -i "s/#option config_path '.*'/option config_path '\/etc\/zerotier'/" "$ZT_CONF"
+    echo "✅ zerotier config_path enabled for data persistence"
+  fi
 fi
 
-# ============================================================
-# Section 8: GCC 8.4.0 Fix (conditional — only if tarball exists)
-# ============================================================
-
-GCC_TARBALL="$GITHUB_WORKSPACE/openwrt/dl/gcc-8.4.0.tar.xz"
-if [ -f "$GCC_TARBALL" ]; then
-  echo "🔧 Patching GCC 8.4.0 libiberty headers..."
-  TMPDIR=$(mktemp -d)
-  tar xJf "$GCC_TARBALL" -C "$TMPDIR" 2>/dev/null
-  FIBHEAP="$TMPDIR/gcc-8.4.0/libiberty/fibheap.c"
-  REGEX="$TMPDIR/gcc-8.4.0/libiberty/regex.c"
-  if [ -f "$FIBHEAP" ] && ! grep -q '#include <limits.h>' "$FIBHEAP"; then
-    sed -i '/#include "fibheap\.h"/a #include <limits.h>\n#include <string.h>' "$FIBHEAP"
-    echo "✅ fibheap.c patched"
-  fi
-  if [ -f "$REGEX" ] && ! grep -q '#include <stdlib.h>' "$REGEX"; then
-    sed -i '/#include <string\.h>/a #include <stdlib.h>' "$REGEX"
-    echo "✅ regex.c patched"
-  fi
-  tar cJf "$GCC_TARBALL" -C "$TMPDIR" gcc-8.4.0 2>/dev/null
-  rm -rf "$TMPDIR"
-  echo "✅ GCC 8.4.0 tarball patched."
-fi
 
 # ============================================================
-# Section 9: Download
+# Section 7: Download
 # ============================================================
 
 # Drop caches to free memory before compilation (prevents OOM in Docker)
 sync; echo 3 > /proc/sys/vm/drop_caches 2>/dev/null || true
 
 make download -j8 || make download -j1 V=s
-find dl -not -path "dl/go-mod-cache/*" -size -1024c -exec rm -f {} \;
-find dl -not -path "dl/go-mod-cache/*" -size 0 -exec rm -f {} \;
-
-# Also patch any previously extracted Ruby build (incremental builds)
-RUBY_BUILD="$GITHUB_WORKSPACE/openwrt/build_dir/hostpkg/ruby-3.1.2"
-if [ -d "$RUBY_BUILD/tool" ]; then
-  if [ -f "$RUBY_BUILD/tool/generic_erb.rb" ]; then
-    if ! grep -q 'rescue LoadError' "$RUBY_BUILD/tool/generic_erb.rb"; then
-      {
-        head -1 "$RUBY_BUILD/tool/generic_erb.rb"
-        cat <<'ERB_PATCH'
-begin
-  require "erb"
-rescue LoadError
-  exec "/usr/bin/ruby", File.expand_path(__FILE__), *ARGV
-end
-ERB_PATCH
-        tail -n +2 "$RUBY_BUILD/tool/generic_erb.rb" | grep -v '^require "erb"$'
-      } > "$RUBY_BUILD/tool/generic_erb.rb.tmp"
-      mv "$RUBY_BUILD/tool/generic_erb.rb.tmp" "$RUBY_BUILD/tool/generic_erb.rb"
-    fi
-  fi
-  sed -i '/file2lastrev\.rb/!b;N;d' "$RUBY_BUILD/uncommon.mk" 2>/dev/null || true
-  if [ -f "$RUBY_BUILD/Makefile" ]; then
-    sed -i 's|BASERUBY = .*|BASERUBY = /usr/bin/ruby |' "$RUBY_BUILD/Makefile"
-  fi
-fi
+find dl -not -path "dl/go-mod-cache/*" -size -1024c -type f -exec rm -f {} \;
+find dl -not -path "dl/go-mod-cache/*" -size 0 -type f -exec rm -f {} \;
 
 # ============================================================
-# Section 10: vlmcsd GCC 13 Fix
+# Section 8: vlmcsd GCC 13 Fix
 # ============================================================
 
 # $(notdir $(CC)) breaks when CC="ccache gcc" (contains spaces)
@@ -199,7 +198,7 @@ if [ -n "$VLMCSD_GNUMAKE" ]; then
 fi
 
 # ============================================================
-# Section 11: Go Packages Pre-compile
+# Section 9: Go Packages Pre-compile
 # ============================================================
 
 # Go packages (frp, adguardhome, filebrowser) have intermittent parallel build
@@ -219,21 +218,23 @@ done
 echo "=== Go packages pre-compilation done ==="
 
 # ============================================================
-# Section 12: Main Build
+# Section 10: Main Build
 # ============================================================
 
 make -j$(nproc) || make -j1 || make -j1 V=s
 popd
 
 # ============================================================
-# Section 13: Save Config & Copy Firmware
+# Section 11: Save Config & Copy Firmware
 # ============================================================
 
-cp -f openwrt/.config ${GITHUB_WORKSPACE}/${CONFIG_FILE}
-
-# Return to workspace root
+# Return to workspace root FIRST
 export GITHUB_WORKSPACE="${GITHUB_WORKSPACE:-$(cd "$(dirname "$0")" 2>/dev/null && pwd || echo ".")}"
 cd "$GITHUB_WORKSPACE"
+
+# Save expanded .config as config.buildinfo (NEVER overwrite config.seed — it's our input!)
+cp -f openwrt/.config config.buildinfo
+echo "✅ Saved expanded config to config.buildinfo"
 
 mkdir -p "$RELEASE_DIR"
 

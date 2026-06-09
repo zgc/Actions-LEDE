@@ -32,7 +32,24 @@ popd
 mv /tmp/openclash-tmp/luci-app-openclash package/emortal/luci-app-openclash
 rm -rf /tmp/openclash-tmp
 
-# 4. adguardhome（beta 分支，luci-app-adguardhome）
+# 4. turboacc（coolsnowwolf/luci master，Flow Offload + BBR）
+rm -rf package/emortal/luci-app-turboacc /tmp/cw-luci
+git clone --depth 1 --filter=blob:none --sparse -b master --no-checkout https://github.com/coolsnowwolf/luci.git /tmp/cw-luci
+pushd /tmp/cw-luci
+git sparse-checkout init --cone
+git sparse-checkout set applications/luci-app-turboacc
+git checkout
+popd
+if [ -f /tmp/cw-luci/applications/luci-app-turboacc/Makefile ]; then
+  cp -r /tmp/cw-luci/applications/luci-app-turboacc package/emortal/luci-app-turboacc
+  sed -i 's|../../luci.mk|$(TOPDIR)/feeds/luci/luci.mk|g' package/emortal/luci-app-turboacc/Makefile
+  echo "OK: luci-app-turboacc from coolsnowwolf/luci master"
+else
+  echo "WARN: luci-app-turboacc not found in coolsnowwolf/luci"
+fi
+rm -rf /tmp/cw-luci
+
+# 5. adguardhome（beta 分支，luci-app-adguardhome）
 rm -rf package/emortal/luci-app-adguardhome
 git clone --depth 1 -b beta https://github.com/rufengsuixing/luci-app-adguardhome.git package/emortal/luci-app-adguardhome
 sed -i "s/\$(TOPDIR)\/luci.mk/\$(TOPDIR)\/feeds\/luci\/luci.mk/g" package/emortal/luci-app-adguardhome/Makefile
