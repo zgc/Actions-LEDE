@@ -56,6 +56,11 @@ CRONEOF
 
 sed -i '/uci commit luci/i\uci set luci.main.mediaurlbase="/luci-static/argon"' package/emortal/default-settings/files/99-default-settings
 
+# Software flow offloading + Fullcone NAT (turboacc replacement)
+sed -i '/^exit 0$/i uci set firewall.@defaults[0].flow_offloading="1"' package/emortal/default-settings/files/99-default-settings
+sed -i '/^exit 0$/i uci set firewall.@zone[1].fullcone="1"' package/emortal/default-settings/files/99-default-settings
+sed -i '/^exit 0$/i uci commit firewall' package/emortal/default-settings/files/99-default-settings
+
 sed -i "s/uci -q set openclash.config.enable=0/uci -q set openclash.config.enable=\$(cat \/etc\/config\/openclash | grep -m 1 \"option enable\" | cut -d: -f2 | awk '{ print \$3}' | cut -d \"'\" -f 2)/g" package/emortal/luci-app-openclash/root/etc/uci-defaults/luci-openclash
 
 sed -i 's/login/login -f root/g' feeds/packages/utils/ttyd/files/ttyd.config
