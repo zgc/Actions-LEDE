@@ -18,12 +18,8 @@ GITHUB_WORKSPACE=$(cd $(dirname $0);pwd)
 
 # Fix: Docker container git detects root-owned repo, refuses operations
 git config --global --add safe.directory '*'
-# Fix: git compiled against GnuTLS has unstable TLS 1.3 handshakes with GitHub
-# Force TLS 1.2 + HTTP/1.1 to avoid GnuTLS TLS 1.3 issues
-# Also increase postBuffer to reduce round-trips
-# NOTE: do NOT remove libcurl3-gnutls — Ubuntu 22.04's git depends on it
-git config --global http.sslVersion tlsv1.2
-git config --global http.version HTTP/1.1
+# Fix: Docker image now has git compiled against OpenSSL (not GnuTLS)
+# TLS workarounds no longer needed — keep postBuffer as safety net
 git config --global http.postBuffer 524288000
 
 # ============================================================
@@ -96,11 +92,17 @@ GITHUB_WORKSPACE=$GITHUB_WORKSPACE $GITHUB_WORKSPACE/$DIY_P1_SH
 ./scripts/feeds update -f -a
 ./scripts/feeds install -a
 
+# Fix: smartdns conf/custom.conf may be missing from some feeds snapshots
+if [ -d feeds/packages/net/smartdns/conf ] && [ ! -f feeds/packages/net/smartdns/conf/custom.conf ]; then
+  echo '# Add custom settings here.' > feeds/packages/net/smartdns/conf/custom.conf
+  echo "✅ smartdns: created missing conf/custom.conf"
+fi
+
 # ============================================================
 # Section 5: Config
 # ============================================================
 
-[ -e ../$CONFIG_FILE ] && cp ../$CONFIG_FILE .config
+[ -e $GITHUB_WORKSPACE/$CONFIG_FILE ] && cp $GITHUB_WORKSPACE/$CONFIG_FILE .config
 make defconfig
 
 # LuCI 25.12 removed luci-base/host/compile (po2lmo no longer needed)
@@ -109,8 +111,8 @@ make defconfig
 
 popd
 
-[ -e files ] && cp -r files openwrt/files
-[ -e $CONFIG_FILE ] && cp $CONFIG_FILE openwrt/.config
+[ -e $GITHUB_WORKSPACE/files ] && cp -r $GITHUB_WORKSPACE/files openwrt/files
+[ -e $GITHUB_WORKSPACE/$CONFIG_FILE ] && cp $GITHUB_WORKSPACE/$CONFIG_FILE openwrt/.config
 chmod +x $DIY_P2_SH
 
 pushd openwrt
@@ -140,6 +142,23 @@ if [ -f "$NETDATA_FEED/Makefile" ]; then
     else
       echo "⚠️ netdata: --disable-cloud not added (--disable-ml pattern changed, manual fix needed)"
     fi
+  fi
+fi
+
+# Fix gnutls 3.8.10 stdbool.h cross-compilation error (gnulib detects ac_cv_header_stdbool_h=yes
+# but its replacement module still undef's HAVE_STDBOOL_H because it checks C99 compiler capabilities)
+# Patch config.h after configure to force HAVE_STDBOOL_H=1.
+GNUTLS_FEED=feeds/packages/libs/gnutls
+if [ -f "$GNUTLS_FEED/Makefile" ]; then
+  if ! grep -q 'HAVE_STDBOOL_H' "$GNUTLS_FEED/Makefile"; then
+    sed -i '/^define Build\/InstallDev/i define Build/Configure\n\t$$(call Build/Configure/Default)\n\t$$(SED) "s|/\\* #undef HAVE_STDBOOL_H \\*/|#define HAVE_STDBOOL_H 1|" $$(PKG_BUILD_DIR)/config.h\nendef\n' "$GNUTLS_FEED/Makefile"
+    if grep -q 'HAVE_STDBOOL_H' "$GNUTLS_FEED/Makefile"; then
+      echo "✅ gnutls: HAVE_STDBOOL_H fix applied (config.h patch after configure)"
+    else
+      echo "⚠️ gnutls: fix not applied (sed pattern changed, manual fix needed)"
+    fi
+  else
+    echo "✅ gnutls: HAVE_STDBOOL_H fix already applied"
   fi
 fi
 
@@ -221,16 +240,29 @@ echo "=== Go packages pre-compilation done ==="
 # Section 10: Main Build
 # ============================================================
 
+# Clean stale squashfs and target-dir caches to force prepare_rootfs
+# to re-apply the files/ overlay. Without this, -j parallel builds
+# may skip target-dir-% (which calls prepare_rootfs) and use a cached
+# squashfs that lacks custom files.
+rm -f openwrt/build_dir/target-x86_64_musl/linux-x86_64/root.squashfs
+rm -rf openwrt/build_dir/target-x86_64_musl/linux-x86_64/target-dir-*
+
+echo "=== Stale squashfs/target-dir cleaned ==="
+
 make -j$(nproc) || make -j1 || make -j1 V=s
+BUILD_RC=$?
 popd
+
+if [ $BUILD_RC -ne 0 ]; then
+  echo "❌ Build failed with exit code $BUILD_RC"
+  echo "❌ Firmware copy SKIPPED — no valid build output"
+  exit $BUILD_RC
+fi
 
 # ============================================================
 # Section 11: Save Config & Copy Firmware
 # ============================================================
 
-# Return to workspace root FIRST
-export GITHUB_WORKSPACE="${GITHUB_WORKSPACE:-$(cd "$(dirname "$0")" 2>/dev/null && pwd || echo ".")}"
-cd "$GITHUB_WORKSPACE"
 
 # Save expanded .config as config.buildinfo (NEVER overwrite config.seed — it's our input!)
 cp -f openwrt/.config config.buildinfo

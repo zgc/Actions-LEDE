@@ -48,13 +48,11 @@ chmod +x package/base-files/files/etc/reset_get_img.sh
 chmod +x package/base-files/files/etc/reset_latest.sh
 chmod +x package/base-files/files/etc/reset_offline.sh
 chmod +x package/base-files/files/etc/reset_upload.sh
-cat >> package/emortal/default-settings/files/99-default-settings << 'CRONEOF'
-if [[ "$(cat /etc/crontabs/root | grep "/etc/check_smartdns_connect.sh")" = "" ]]; then echo "#*/5 * * * * /etc/check_smartdns_connect.sh" >> /etc/crontabs/root; fi
-if [[ "$(cat /etc/crontabs/root | grep "/etc/check_openclash_connect.sh")" = "" ]]; then echo "#*/5 * * * * /etc/check_openclash_connect.sh" >> /etc/crontabs/root; fi
-if [[ "$(cat /etc/crontabs/root | grep "/etc/check_wan_connect.sh")" = "" ]]; then echo "#*/5 * * * * /etc/check_wan_connect.sh" >> /etc/crontabs/root; fi
-CRONEOF
+sed -i '/exit 0/i\if ! grep -q "/etc/check_smartdns_connect.sh" /etc/crontabs/root 2>/dev/null; then echo "#*/5 * * * * /etc/check_smartdns_connect.sh" >> /etc/crontabs/root; fi' package/emortal/default-settings/files/99-default-settings
+sed -i '/exit 0/i\if ! grep -q "/etc/check_openclash_connect.sh" /etc/crontabs/root 2>/dev/null; then echo "#*/5 * * * * /etc/check_openclash_connect.sh" >> /etc/crontabs/root; fi' package/emortal/default-settings/files/99-default-settings
+sed -i '/exit 0/i\if ! grep -q "/etc/check_wan_connect.sh" /etc/crontabs/root 2>/dev/null; then echo "#*/5 * * * * /etc/check_wan_connect.sh" >> /etc/crontabs/root; fi' package/emortal/default-settings/files/99-default-settings
 
-sed -i '/uci commit luci/i\uci set luci.main.mediaurlbase="/luci-static/argon"' package/emortal/default-settings/files/99-default-settings
+sed -i '/commit luci/i\set luci.main.mediaurlbase="/luci-static/argon"' package/emortal/default-settings/files/99-default-settings
 
 # Software flow offloading + Fullcone NAT (turboacc replacement)
 sed -i '/^exit 0$/i uci set firewall.@defaults[0].flow_offloading="1"' package/emortal/default-settings/files/99-default-settings

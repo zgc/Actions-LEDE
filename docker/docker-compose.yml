@@ -2,9 +2,8 @@ version: '3.8'
 
 services:
   builder:
-    build: .
-    image: action-lede:latest
-    container_name: action-lede-builder
+    image: actions-lede-builder:latest
+    container_name: openwrt-base-builder
     volumes:
       - ..:/workdir/Actions-LEDE
     stdin_open: true
@@ -12,9 +11,8 @@ services:
     command: /bin/bash
 
   build:
-    build: .
-    image: action-lede:latest
-    container_name: action-lede-build
+    image: actions-lede-builder:latest
+    container_name: openwrt-base-build
     volumes:
       - ..:/workdir/Actions-LEDE
     command: >
