@@ -73,7 +73,6 @@ CONFIG_PACKAGE_iperf3=y
 CONFIG_PACKAGE_iptables-mod-conntrack-extra=y
 CONFIG_PACKAGE_iptables-mod-ipopt=y
 CONFIG_PACKAGE_iptables-mod-tproxy=y
-CONFIG_PACKAGE_ipv6helper=y
 CONFIG_PACKAGE_kmod-fs-f2fs=y
 CONFIG_PACKAGE_kmod-igc=y
 CONFIG_PACKAGE_kmod-ipt-offload=y
@@ -86,7 +85,33 @@ CONFIG_PACKAGE_kmod-usb2=y
 CONFIG_PACKAGE_kmod-usb3=y
 CONFIG_PACKAGE_kmod-usb-net-rtl8152=y
 # CONFIG_PACKAGE_kmod-usb-net-rtl8152-vendor is not set
+CONFIG_PACKAGE_r8152-firmware=y
+CONFIG_PACKAGE_bnx2x-firmware=y
 CONFIG_PACKAGE_kmod-r8125=y
+# NIC drivers (PCI) — 显式声明防止自动依赖变动丢失
+CONFIG_PACKAGE_kmod-igb=y
+CONFIG_PACKAGE_kmod-e1000e=y
+CONFIG_PACKAGE_kmod-ixgbe=y
+CONFIG_PACKAGE_kmod-i40e=y
+CONFIG_PACKAGE_kmod-tg3=y
+CONFIG_PACKAGE_kmod-r8168=y
+CONFIG_PACKAGE_kmod-vmxnet3=y
+CONFIG_PACKAGE_kmod-atlantic=y
+# NIC drivers (USB)
+CONFIG_PACKAGE_kmod-usb-net-aqc111=y
+# CPU microcode
+CONFIG_PACKAGE_intel-microcode=y
+CONFIG_PACKAGE_amd64-microcode=y
+# Monitoring & debugging
+CONFIG_PACKAGE_vnstat=y
+CONFIG_PACKAGE_nlbwmon=y
+CONFIG_PACKAGE_luci-app-nlbwmon=y
+CONFIG_PACKAGE_pciutils=y
+CONFIG_PACKAGE_pciids=y
+CONFIG_PACKAGE_luci-app-accesscontrol=y
+CONFIG_PACKAGE_tcpdump=y
+CONFIG_PACKAGE_lm-sensors=y
+CONFIG_PACKAGE_bind-tools=y
 CONFIG_PACKAGE_kmod-sound-core=y
 CONFIG_PACKAGE_losetup=y
 CONFIG_PACKAGE_openssh-client=y
