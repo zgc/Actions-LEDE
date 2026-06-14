@@ -976,26 +976,6 @@ config ip-rule
 
 curl --retry 5 -L https://github.com/pymumu/smartdns/raw/master/package/openwrt/custom.conf -o feeds/packages/net/smartdns/conf/custom.conf
 
-# Fix GCC 8.4.0 libiberty compilation errors (missing headers in newer GCC host)
-# fibheap.c needs limits.h and string.h; regex.c needs stdlib.h
-GCC_LIBIBERTY_DIR="build_dir/toolchain-x86_64_gcc-8.4.0_musl/gcc-8.4.0/libiberty"
-if [ -d "$GCC_LIBIBERTY_DIR" ]; then
-  echo "🔧 Patching GCC 8.4.0 libiberty headers..."
-  FIBHEAP="$GCC_LIBIBERTY_DIR/fibheap.c"
-  if [ -f "$FIBHEAP" ] && ! grep -q '#include <limits.h>' "$FIBHEAP"; then
-    sed -i '/#include "fibheap\.h"/a #include <limits.h>\n#include <string.h>' "$FIBHEAP"
-    echo "✅ fibheap.c patched"
-  fi
-  REGEX="$GCC_LIBIBERTY_DIR/regex.c"
-  if [ -f "$REGEX" ] && ! grep -q '#include <stdlib.h>' "$REGEX"; then
-    sed -i '/#include <string\.h>/a #include <stdlib.h>' "$REGEX"
-    echo "✅ regex.c patched"
-  fi
-  echo "✅ GCC 8.4.0 libiberty headers patched."
-else
-  echo "⏭️ GCC libiberty not yet extracted; will patch during make."
-fi
-
 #latest_ver="$(curl --retry 5 https://api.github.com/repos/AdguardTeam/AdGuardHome/releases/latest 2>/dev/null|grep -E 'tag_name' |grep -E 'v[0-9.]+' -o 2>/dev/null)"
 #curl --retry 5 -L https://github.com/AdguardTeam/AdGuardHome/releases/download/${latest_ver}/AdGuardHome_linux_${Arch}.tar.gz | tar zxf -
 #mkdir -p package/base-files/files/usr/bin/AdGuardHome
