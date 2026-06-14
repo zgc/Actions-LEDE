@@ -3,8 +3,8 @@
 # Actions-LEDE — Generic OpenWrt/ImmortalWrt Build Script
 # Base: ImmortalWrt master
 #
-# Device-specific overrides: create device.conf in the same directory
-# Example device.conf:
+# Device-specific overrides: create openwrt-device.conf in the same directory
+# Example openwrt-device.conf:
 #   RELEASE_NAME=nuc8
 #
 
@@ -14,7 +14,7 @@
 
 GITHUB_WORKSPACE=$(cd $(dirname $0);pwd)
 # Source device-specific overrides
-[ -f "$GITHUB_WORKSPACE/device.conf" ] && source "$GITHUB_WORKSPACE/device.conf"
+[ -f "$GITHUB_WORKSPACE/openwrt-device.conf" ] && source "$GITHUB_WORKSPACE/openwrt-device.conf"
 
 # Fix: Docker container git detects root-owned repo, refuses operations
 git config --global --add safe.directory '*'
