@@ -30,7 +30,7 @@ RELEASE_DIR=${RELEASE_DIR:-$GITHUB_WORKSPACE/release}
 DEVICE_NAME=$(grep '^CONFIG_TARGET.*DEVICE.*=y' config.seed | sed -r 's/CONFIG_TARGET_(.*)_DEVICE.*=y/\1/')
 RELEASE_NAME=${RELEASE_NAME:-${DEVICE_NAME:-firmware}}
 REPO_URL="https://github.com/immortalwrt/immortalwrt"
-REPO_BRANCH="master"
+REPO_BRANCH="${REPO_BRANCH:-master}"
 REPO_COMMIT=""
 FEEDS_CONF="feeds.conf.default"
 CONFIG_FILE="config.seed"
@@ -52,8 +52,18 @@ fi
 # Section 3: Clone/Pull OpenWrt
 # ============================================================
 
-if [ ! -e openwrt ]; then
+if [ ! -e openwrt ] || [ ! -d openwrt/.git ]; then
+  # No valid git clone — need fresh clone
+  if [ -d openwrt/dl ]; then
+    mv openwrt/dl /tmp/dl-cache
+    echo "✅ Preserved dl/ cache"
+  fi
+  rm -rf openwrt
   git clone --depth 1 $REPO_URL -b $REPO_BRANCH openwrt
+  if [ -d /tmp/dl-cache ]; then
+    mv /tmp/dl-cache openwrt/dl
+    echo "✅ Restored dl/ cache ($(ls openwrt/dl | wc -l) files)"
+  fi
 elif [ -z $REPO_COMMIT ]; then
   pushd openwrt
   rm -rf files package
@@ -244,8 +254,8 @@ echo "=== Go packages pre-compilation done ==="
 # to re-apply the files/ overlay. Without this, -j parallel builds
 # may skip target-dir-% (which calls prepare_rootfs) and use a cached
 # squashfs that lacks custom files.
-rm -f openwrt/build_dir/target-x86_64_musl/linux-x86_64/root.squashfs
-rm -rf openwrt/build_dir/target-x86_64_musl/linux-x86_64/target-dir-*
+rm -f build_dir/target-x86_64_musl/linux-x86_64/root.squashfs
+rm -rf build_dir/target-x86_64_musl/linux-x86_64/target-dir-*
 
 echo "=== Stale squashfs/target-dir cleaned ==="
 
