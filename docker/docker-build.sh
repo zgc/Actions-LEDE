@@ -6,7 +6,7 @@
 
 set -e
 
-IMAGE_NAME="action-lede"
+IMAGE_NAME="actions-lede-builder"
 PROJECT_ROOT="$(cd .. && pwd)"
 
 case "${1:-help}" in
