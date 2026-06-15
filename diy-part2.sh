@@ -13,7 +13,7 @@
 # Modify default IP
 sed -i 's/192.168.1.1/192.168.2.1/g' package/base-files/files/bin/config_generate
 
-LUCI_BRANCH=18.06
+LUCI_BRANCH=master
 Arch="amd64"
 CPU_MODEL="${Arch}-v3"
 CLASH_META_REPOS_VERNESONG=${CLASH_META_REPOS_VERNESONG:-true}
@@ -22,44 +22,35 @@ rm -rf feeds/luci/themes/luci-theme-argon
 git clone --depth 1 -b $LUCI_BRANCH https://github.com/jerrykuku/luci-theme-argon.git feeds/luci/themes/luci-theme-argon
 sed -i "s/\$(TOPDIR)\/luci.mk/\$(TOPDIR)\/feeds\/luci\/luci.mk/g" feeds/luci/themes/luci-theme-argon/Makefile
 
+
 rm -rf feeds/packages/net/smartdns/conf
 mkdir -p feeds/packages/net/smartdns/conf
-# Use local conf files instead of remote curl (more reliable)
-cat > feeds/packages/net/smartdns/conf/custom.conf << 'CUSTOM_EOF'
-# SmartDNS custom configuration
-CUSTOM_EOF
-
+# SmartDNS conf: smartdns.conf generated locally, custom.conf fetched via curl
 cat > feeds/packages/net/smartdns/conf/smartdns.conf << 'SMARTDNS_EOF'
 # SmartDNS default configuration
 SMARTDNS_EOF
-sed -i 's/PKG_BUILD_DIR)\\/package\\/openwrt\\/custom.conf/\$(CURDIR)\\/conf\\/custom.conf/g' feeds/packages/net/smartdns/Makefile
-sed -i 's/PKG_BUILD_DIR)\\/package\\/openwrt\\/files\\/etc\\/config\\/smartdns/\$(CURDIR)\\/conf\\/smartdns.conf/g' feeds/packages/net/smartdns/Makefile
-cp $GITHUB_WORKSPACE/scripts/check_smartdns_connect.sh package/base-files/files/etc
-cp $GITHUB_WORKSPACE/scripts/check_openclash_connect.sh package/base-files/files/etc
-cp $GITHUB_WORKSPACE/scripts/check_wan_connect.sh package/base-files/files/etc
-cp $GITHUB_WORKSPACE/scripts/reset_get_img.sh package/base-files/files/etc
-cp $GITHUB_WORKSPACE/scripts/reset_latest.sh package/base-files/files/etc
-cp $GITHUB_WORKSPACE/scripts/reset_offline.sh package/base-files/files/etc
-cp $GITHUB_WORKSPACE/scripts/reset_upload.sh package/base-files/files/etc
-chmod +x package/base-files/files/etc/check_smartdns_connect.sh
-chmod +x package/base-files/files/etc/check_openclash_connect.sh
-chmod +x package/base-files/files/etc/check_wan_connect.sh
-chmod +x package/base-files/files/etc/reset_get_img.sh
-chmod +x package/base-files/files/etc/reset_latest.sh
-chmod +x package/base-files/files/etc/reset_offline.sh
-chmod +x package/base-files/files/etc/reset_upload.sh
-cat >> package/emortal/default-settings/files/99-default-settings << 'CRONEOF'
-if [[ "$(cat /etc/crontabs/root | grep "/etc/check_smartdns_connect.sh")" = "" ]]; then echo "#*/5 * * * * /etc/check_smartdns_connect.sh" >> /etc/crontabs/root; fi
-if [[ "$(cat /etc/crontabs/root | grep "/etc/check_openclash_connect.sh")" = "" ]]; then echo "#*/5 * * * * /etc/check_openclash_connect.sh" >> /etc/crontabs/root; fi
-if [[ "$(cat /etc/crontabs/root | grep "/etc/check_wan_connect.sh")" = "" ]]; then echo "#*/5 * * * * /etc/check_wan_connect.sh" >> /etc/crontabs/root; fi
-CRONEOF
+sed -i 's#PKG_BUILD_DIR)/package/openwrt/custom.conf#CURDIR)/conf/custom.conf#g' feeds/packages/net/smartdns/Makefile
+sed -i 's#PKG_BUILD_DIR)/package/openwrt/files/etc/config/smartdns#CURDIR)/conf/smartdns.conf#g' feeds/packages/net/smartdns/Makefile
+for script in check_smartdns_connect.sh check_openclash_connect.sh check_wan_connect.sh \
+              reset_get_img.sh reset_latest.sh reset_offline.sh reset_upload.sh; do
+  cp "$GITHUB_WORKSPACE/scripts/$script" package/base-files/files/etc/
+  chmod +x "package/base-files/files/etc/$script"
+done
 
-sed -i '/uci commit luci/i\uci set luci.main.mediaurlbase="/luci-static/argon"' package/emortal/default-settings/files/99-default-settings
+for cron_script in check_smartdns_connect.sh check_openclash_connect.sh check_wan_connect.sh; do
+  sed -i '/exit 0/i\if ! grep -q "/etc/'"$cron_script"'" /etc/crontabs/root 2>/dev/null; then echo "#*/5 * * * * /etc/'"$cron_script"'" >> /etc/crontabs/root; fi' package/emortal/default-settings/files/99-default-settings
+done
+
+sed -i '/commit luci/i\set luci.main.mediaurlbase="/luci-static/argon"' package/emortal/default-settings/files/99-default-settings
+
+# Software flow offloading + Fullcone NAT (turboacc replacement)
+sed -i '/^exit 0$/i uci set firewall.@defaults[0].flow_offloading="1"' package/emortal/default-settings/files/99-default-settings
+sed -i '/^exit 0$/i uci set firewall.@zone[1].fullcone="1"' package/emortal/default-settings/files/99-default-settings
+sed -i '/^exit 0$/i uci commit firewall' package/emortal/default-settings/files/99-default-settings
 
 sed -i "s/uci -q set openclash.config.enable=0/uci -q set openclash.config.enable=\$(cat \/etc\/config\/openclash | grep -m 1 \"option enable\" | cut -d: -f2 | awk '{ print \$3}' | cut -d \"'\" -f 2)/g" package/emortal/luci-app-openclash/root/etc/uci-defaults/luci-openclash
 
-sed -i 's/login/login -f root/g' feeds/packages/utils/ttyd/files/ttyd.config
-sed -i 's/\${interface:+-i \$interface\}/#\${interface:+-i \$interface\}/g' feeds/packages/utils/ttyd/files/ttyd.init
+sed -i "s|option command '.*'|option command '/bin/login -f root'|" feeds/packages/utils/ttyd/files/ttyd.config
 
 echo '
 
@@ -973,187 +964,46 @@ config ip-rule
 
 curl --retry 5 -L https://github.com/pymumu/smartdns/raw/master/package/openwrt/custom.conf -o feeds/packages/net/smartdns/conf/custom.conf
 
-# Fix GCC 8.4.0 libiberty compilation errors (missing headers in newer GCC host)
-# fibheap.c needs limits.h and string.h; regex.c needs stdlib.h
-GCC_LIBIBERTY_DIR="build_dir/toolchain-x86_64_gcc-8.4.0_musl/gcc-8.4.0/libiberty"
-if [ -d "$GCC_LIBIBERTY_DIR" ]; then
-  echo "🔧 Patching GCC 8.4.0 libiberty headers..."
-  FIBHEAP="$GCC_LIBIBERTY_DIR/fibheap.c"
-  if [ -f "$FIBHEAP" ] && ! grep -q '#include <limits.h>' "$FIBHEAP"; then
-    sed -i '/#include "fibheap\.h"/a #include <limits.h>\n#include <string.h>' "$FIBHEAP"
-    echo "✅ fibheap.c patched"
-  fi
-  REGEX="$GCC_LIBIBERTY_DIR/regex.c"
-  if [ -f "$REGEX" ] && ! grep -q '#include <stdlib.h>' "$REGEX"; then
-    sed -i '/#include <string\.h>/a #include <stdlib.h>' "$REGEX"
-    echo "✅ regex.c patched"
-  fi
-  echo "✅ GCC 8.4.0 libiberty headers patched."
-else
-  echo "⏭️ GCC libiberty not yet extracted; will patch during make."
-fi
+# ============================================================
+# firmware_version (dynamic, generated at build time)
+# ============================================================
+FW_DATE=$(date +%Y%m%d)
+FW_HASH=$(git -C "$GITHUB_WORKSPACE" rev-parse --short HEAD 2>/dev/null || echo "dev")
+FW_DEVICE=$(grep '^RELEASE_NAME=' "$GITHUB_WORKSPACE/openwrt-device.conf" 2>/dev/null | cut -d= -f2 | tr -d '"' || echo "unknown")
+cat > package/base-files/files/etc/firmware_version <<FWEOF
+VERSION=${FW_DATE}-${FW_HASH}
+DEVICE=${FW_DEVICE}
+BUILD_DATE=$(date -Iseconds)
+FWEOF
+echo "✅ firmware_version: ${FW_DATE}-${FW_HASH} (${FW_DEVICE})"
 
-#latest_ver="$(curl --retry 5 https://api.github.com/repos/AdguardTeam/AdGuardHome/releases/latest 2>/dev/null|grep -E 'tag_name' |grep -E 'v[0-9.]+' -o 2>/dev/null)"
-#curl --retry 5 -L https://github.com/AdguardTeam/AdGuardHome/releases/download/${latest_ver}/AdGuardHome_linux_${Arch}.tar.gz | tar zxf -
-#mkdir -p package/base-files/files/usr/bin/AdGuardHome
-#mv AdGuardHome/AdGuardHome package/base-files/files/usr/bin/AdGuardHome
-#rm -rf AdGuardHome
-echo '
-bind_host: 0.0.0.0
-bind_port: 3000
-beta_bind_port: 0
-users:
-- name: root
-  password: $2y$10$56/.x0qHxLz4YfXJNuAphOuUb71kBo5eQ2AyreqrI3PZvfGJiU/gy
-auth_attempts: 5
-block_auth_min: 15
-http_proxy: ""
-language: ""
-debug_pprof: false
-web_session_ttl: 720
-dns:
-  bind_hosts:
-  - 0.0.0.0
-  port: 5553
-  statistics_interval: 1
-  querylog_enabled: false
-  querylog_file_enabled: true
-  querylog_interval: 24h
-  querylog_size_memory: 1000
-  anonymize_client_ip: false
-  protection_enabled: true
-  blocking_mode: nxdomain
-  blocking_ipv4: ""
-  blocking_ipv6: ""
-  blocked_response_ttl: 10
-  parental_block_host: family-block.dns.adguard.com
-  safebrowsing_block_host: standard-block.dns.adguard.com
-  ratelimit: 0
-  ratelimit_whitelist: []
-  refuse_any: false
-  upstream_dns:
-  - "#127.0.0.1:7874"
-  - 127.0.0.1:6053
-  - "#127.0.0.1:7053"
-  upstream_dns_file: ""
-  bootstrap_dns:
-  - 119.29.29.29
-  - 223.5.5.5
-  all_servers: true
-  fastest_addr: false
-  fastest_timeout: 1s
-  allowed_clients: []
-  disallowed_clients: []
-  blocked_hosts:
-  - version.bind
-  - id.server
-  - hostname.bind
-  trusted_proxies:
-  - 127.0.0.0/8
-  - ::1/128
-  cache_size: 0
-  cache_ttl_min: 0
-  cache_ttl_max: 0
-  cache_optimistic: true
-  bogus_nxdomain: []
-  aaaa_disabled: false
-  enable_dnssec: false
-  edns_client_subnet: false
-  max_goroutines: 300
-  ipset: []
-  filtering_enabled: true
-  filters_update_interval: 1
-  parental_enabled: false
-  safesearch_enabled: false
-  safebrowsing_enabled: false
-  safebrowsing_cache_size: 1048576
-  safesearch_cache_size: 1048576
-  parental_cache_size: 1048576
-  cache_time: 30
-  rewrites: []
-  blocked_services: []
-  upstream_timeout: 10s
-  local_domain_name: lan
-  resolve_clients: true
-  use_private_ptr_resolvers: true
-  local_ptr_upstreams: []
-tls:
-  enabled: false
-  server_name: ""
-  force_https: false
-  port_https: 443
-  port_dns_over_tls: 853
-  port_dns_over_quic: 784
-  port_dnscrypt: 0
-  dnscrypt_config_file: ""
-  allow_unencrypted_doh: false
-  strict_sni_check: false
-  certificate_chain: ""
-  private_key: ""
-  certificate_path: ""
-  private_key_path: ""
-filters:
-- enabled: true
-  url: https://adguardteam.github.io/AdGuardSDNSFilter/Filters/filter.txt
-  name: AdGuard Simplified Domain Names filter
-  id: 1
-- enabled: true
-  url: https://adaway.org/hosts.txt
-  name: AdAway
-  id: 2
-- enabled: false
-  url: https://www.malwaredomainlist.com/hostslist/hosts.txt
-  name: MalwareDomainList.com Hosts List
-  id: 4
-- enabled: false
-  url: https://raw.githubusercontent.com/vokins/yhosts/master/data/tvbox.txt
-  name: tvbox
-  id: 1575018007
-- enabled: false
-  url: http://sbc.io/hosts/hosts
-  name: StevenBlack host basic
-  id: 1575618242
-- enabled: false
-  url: http://sbc.io/hosts/alternates/fakenews-gambling-porn-social/hosts
-  name: StevenBlack host+fakenews + gambling + porn + social
-  id: 1575618243
-- enabled: true
-  url: https://anti-ad.net/easylist.txt
-  name: anti-AD
-  id: 1577113202
-- enabled: true
-  url: https://raw.githubusercontent.com/o0HalfLife0o/list/master/ad.txt
-  name: halflife
-  id: 1636875676
-whitelist_filters: []
-user_rules: []
-dhcp:
-  enabled: false
-  interface_name: ""
-  dhcpv4:
-    gateway_ip: ""
-    subnet_mask: ""
-    range_start: ""
-    range_end: ""
-    lease_duration: 86400
-    icmp_timeout_msec: 1000
-    options: []
-  dhcpv6:
-    range_start: ""
-    lease_duration: 86400
-    ra_slaac_only: false
-    ra_allow_slaac: false
-clients: []
-log_compress: false
-log_localtime: false
-log_max_backups: 0
-log_max_size: 100
-log_max_age: 3
-log_file: ""
-verbose: false
-os:
-  group: ""
-  user: ""
-  rlimit_nofile: 0
-schema_version: 12
-' >package/base-files/files/etc/AdGuardHome.yaml
+cp "$GITHUB_WORKSPACE/openwrt-device.conf" package/base-files/files/etc/openwrt-device.conf
+echo "✅ openwrt-device.conf → /etc/"
+
+# ============================================================
+# Disable USB autosuspend (USB NIC stability)
+# ============================================================
+sed -i '/^exit 0/i echo -1 > /sys/module/usbcore/parameters/autosuspend' openwrt/package/base-files/files/etc/rc.local
+echo "✅ USB autosuspend disabled"
+
+# ============================================================
+# r8152 USB NIC hotplug (checksum offload + txqueuelen)
+# ============================================================
+mkdir -p openwrt/package/base-files/files/etc/hotplug.d/net
+cat > openwrt/package/base-files/files/etc/hotplug.d/net/99-r8152-offload <<'HOTPLUG'
+#!/bin/sh
+# Disable hardware checksum offload + increase txqueuelen for Realtek USB NICs
+# RTL8152/8153/8156 are known to deadlock when offload is enabled
+
+[ "$ACTION" = "ifup" ] || exit 0
+
+DRIVER=$(ethtool -i "$DEVICE" 2>/dev/null | sed -n 's/^driver: //p')
+[ "$DRIVER" = "r8152" ] || exit 0
+
+ethtool -K "$DEVICE" rx off tx off 2>/dev/null
+ip link set "$DEVICE" txqueuelen 5000 2>/dev/null
+logger -t "r8152-fix" "Applied offload/txqueuelen fixes for $DEVICE"
+HOTPLUG
+chmod +x openwrt/package/base-files/files/etc/hotplug.d/net/99-r8152-offload
+echo "✅ r8152 hotplug script created"
+
