@@ -1,5 +1,8 @@
 #!/bin/bash
 
+# Source openwrt-device.conf
+[ -f /etc/openwrt-device.conf ] && . /etc/openwrt-device.conf
+
 IMG_DIR=${IMG_DIR:-/tmp}
 cd $IMG_DIR
 

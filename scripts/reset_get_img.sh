@@ -1,17 +1,28 @@
 #!/bin/bash
 
+# Source openwrt-device.conf
+[ -f /etc/openwrt-device.conf ] && . /etc/openwrt-device.conf
+
 IMG_DIR=${IMG_DIR:-/tmp}
 cd $IMG_DIR
 
-GITHUB_REPO="zgc/Actions-LEDE"
+GITHUB_REPO=${GITHUB_REPO:-"zgc/Actions-LEDE"}
 ARCH=`uname -m`
 
 get_latest_release() {
-	curl --retry 5 --header "Accept: application/vnd.github+json" --silent "https://api.github.com/repos/$1/releases/latest"
+	if [ -n "$GITHUB_OAUTH_TOKEN" ]; then
+		curl --retry 5 --header "Authorization: Bearer $GITHUB_OAUTH_TOKEN" --header "Accept: application/vnd.github+json" --silent "https://api.github.com/repos/$1/releases/latest"
+	else
+		curl --retry 5 --header "Accept: application/vnd.github+json" --silent "https://api.github.com/repos/$1/releases/latest"
+	fi
 }
 
 get_latest_assets() {
-  curl --retry 5 -LJO -H 'Accept: application/octet-stream' "https://api.github.com/repos/$1/releases/assets/$2"
+	if [ -n "$GITHUB_OAUTH_TOKEN" ]; then
+		curl --retry 5 -LJO -H "Authorization: token $GITHUB_OAUTH_TOKEN" -H 'Accept: application/octet-stream' "https://api.github.com/repos/$1/releases/assets/$2"
+	else
+		curl --retry 5 -LJO -H 'Accept: application/octet-stream' "https://api.github.com/repos/$1/releases/assets/$2"
+	fi
 }
 
 echo -e '\e[92m开始获取 '$GITHUB_REPO' latest版本\e[0m'
