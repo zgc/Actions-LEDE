@@ -22,18 +22,10 @@ rm -rf feeds/luci/themes/luci-theme-argon
 git clone --depth 1 -b $LUCI_BRANCH https://github.com/jerrykuku/luci-theme-argon.git feeds/luci/themes/luci-theme-argon
 sed -i "s/\$(TOPDIR)\/luci.mk/\$(TOPDIR)\/feeds\/luci\/luci.mk/g" feeds/luci/themes/luci-theme-argon/Makefile
 
-# Fix wget-any → wget-nossl (emortal feed doesn't provide wget-any virtual package)
-if [ -f package/emortal/luci-theme-argon/Makefile ]; then
-  sed -i 's/+wget-any/+wget-nossl/' package/emortal/luci-theme-argon/Makefile
-fi
 
 rm -rf feeds/packages/net/smartdns/conf
 mkdir -p feeds/packages/net/smartdns/conf
-# Use local conf files instead of remote curl (more reliable)
-cat > feeds/packages/net/smartdns/conf/custom.conf << 'CUSTOM_EOF'
-# SmartDNS custom configuration
-CUSTOM_EOF
-
+# SmartDNS conf: smartdns.conf generated locally, custom.conf fetched via curl
 cat > feeds/packages/net/smartdns/conf/smartdns.conf << 'SMARTDNS_EOF'
 # SmartDNS default configuration
 SMARTDNS_EOF
@@ -58,8 +50,7 @@ sed -i '/^exit 0$/i uci commit firewall' package/emortal/default-settings/files/
 
 sed -i "s/uci -q set openclash.config.enable=0/uci -q set openclash.config.enable=\$(cat \/etc\/config\/openclash | grep -m 1 \"option enable\" | cut -d: -f2 | awk '{ print \$3}' | cut -d \"'\" -f 2)/g" package/emortal/luci-app-openclash/root/etc/uci-defaults/luci-openclash
 
-sed -i 's/login/login -f root/g' feeds/packages/utils/ttyd/files/ttyd.config
-sed -i 's/\${interface:+-i \$interface\}/#\${interface:+-i \$interface\}/g' feeds/packages/utils/ttyd/files/ttyd.init
+sed -i "s|option command '.*'|option command '/bin/login -f root'|" feeds/packages/utils/ttyd/files/ttyd.config
 
 echo '
 
@@ -988,4 +979,31 @@ echo "✅ firmware_version: ${FW_DATE}-${FW_HASH} (${FW_DEVICE})"
 
 cp "$GITHUB_WORKSPACE/openwrt-device.conf" package/base-files/files/etc/openwrt-device.conf
 echo "✅ openwrt-device.conf → /etc/"
+
+# ============================================================
+# Disable USB autosuspend (USB NIC stability)
+# ============================================================
+sed -i '/^exit 0/i echo -1 > /sys/module/usbcore/parameters/autosuspend' openwrt/package/base-files/files/etc/rc.local
+echo "✅ USB autosuspend disabled"
+
+# ============================================================
+# r8152 USB NIC hotplug (checksum offload + txqueuelen)
+# ============================================================
+mkdir -p openwrt/package/base-files/files/etc/hotplug.d/net
+cat > openwrt/package/base-files/files/etc/hotplug.d/net/99-r8152-offload <<'HOTPLUG'
+#!/bin/sh
+# Disable hardware checksum offload + increase txqueuelen for Realtek USB NICs
+# RTL8152/8153/8156 are known to deadlock when offload is enabled
+
+[ "$ACTION" = "ifup" ] || exit 0
+
+DRIVER=$(ethtool -i "$DEVICE" 2>/dev/null | sed -n 's/^driver: //p')
+[ "$DRIVER" = "r8152" ] || exit 0
+
+ethtool -K "$DEVICE" rx off tx off 2>/dev/null
+ip link set "$DEVICE" txqueuelen 5000 2>/dev/null
+logger -t "r8152-fix" "Applied offload/txqueuelen fixes for $DEVICE"
+HOTPLUG
+chmod +x openwrt/package/base-files/files/etc/hotplug.d/net/99-r8152-offload
+echo "✅ r8152 hotplug script created"
 

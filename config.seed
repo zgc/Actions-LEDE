@@ -125,6 +125,9 @@ CONFIG_PACKAGE_usb-modeswitch=y
 CONFIG_PACKAGE_wget=y
 CONFIG_PACKAGE_zstd=y
 
+# CPU interrupt balancing (USB NIC stability)
+CONFIG_PACKAGE_irqbalance=y
+
 # CONFIG_PACKAGE_luci-app-adbyby-plus is not set
 # CONFIG_PACKAGE_luci-app-ddns is not set
 # CONFIG_PACKAGE_luci-app-ipsec-vpnd is not set
