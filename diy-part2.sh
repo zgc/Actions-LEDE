@@ -973,3 +973,19 @@ config ip-rule
 
 curl --retry 5 -L https://github.com/pymumu/smartdns/raw/master/package/openwrt/custom.conf -o feeds/packages/net/smartdns/conf/custom.conf
 
+# ============================================================
+# firmware_version (dynamic, generated at build time)
+# ============================================================
+FW_DATE=$(date +%Y%m%d)
+FW_HASH=$(git -C "$GITHUB_WORKSPACE" rev-parse --short HEAD 2>/dev/null || echo "dev")
+FW_DEVICE=$(grep '^RELEASE_NAME=' "$GITHUB_WORKSPACE/openwrt-device.conf" 2>/dev/null | cut -d= -f2 | tr -d '"' || echo "unknown")
+cat > package/base-files/files/etc/firmware_version <<FWEOF
+VERSION=${FW_DATE}-${FW_HASH}
+DEVICE=${FW_DEVICE}
+BUILD_DATE=$(date -Iseconds)
+FWEOF
+echo "✅ firmware_version: ${FW_DATE}-${FW_HASH} (${FW_DEVICE})"
+
+cp "$GITHUB_WORKSPACE/openwrt-device.conf" package/base-files/files/etc/openwrt-device.conf
+echo "✅ openwrt-device.conf → /etc/"
+
