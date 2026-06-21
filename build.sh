@@ -37,6 +37,10 @@ CONFIG_FILE="config.seed"
 DIY_P1_SH="diy-part1.sh"
 DIY_P2_SH="diy-part2.sh"
 
+# Build cache directory for Docker volume persistence (staging_dir, build_dir, dl)
+# Mount a Docker volume here to reuse cross-compiler toolchain between container runs
+BUILD_CACHE_DIR=${BUILD_CACHE_DIR:-}
+
 # ============================================================
 # Section 2.1: Build Prerequisites
 # ============================================================
@@ -54,16 +58,36 @@ fi
 
 if [ ! -e openwrt ] || [ ! -d openwrt/.git ]; then
   # No valid git clone — need fresh clone
-  if [ -d openwrt/dl ]; then
-    mv openwrt/dl /tmp/dl-cache
-    echo "✅ Preserved dl/ cache"
+  # Build cache: saves cross-compiler toolchain (~10 min), dl (~5 min), build_dir (~5 min)
+  if [ -d openwrt ]; then
+    # Save existing caches (same container, rebuild path)
+    for dir in dl staging_dir build_dir; do
+      if [ -d "openwrt/$dir" ] && [ ! -L "openwrt/$dir" ]; then
+        mkdir -p "$BUILD_CACHE_DIR"
+        rm -rf "$BUILD_CACHE_DIR/$dir"
+        mv "openwrt/$dir" "$BUILD_CACHE_DIR/$dir"
+      fi
+    done
+    [ -d "$BUILD_CACHE_DIR" ] && echo "✅ Saved build caches to $BUILD_CACHE_DIR"
+  elif [ -n "$BUILD_CACHE_DIR" ] && [ -d "$BUILD_CACHE_DIR" ]; then
+    # Restore caches from persistent storage (new container with Docker volume)
+    for dir in dl staging_dir build_dir; do
+      if [ -d "$BUILD_CACHE_DIR/$dir" ]; then
+        mv "$BUILD_CACHE_DIR/$dir" "/tmp/$dir-cache"
+      fi
+    done
   fi
+
   rm -rf openwrt
   git clone --depth 1 $REPO_URL -b $REPO_BRANCH openwrt
-  if [ -d /tmp/dl-cache ]; then
-    mv /tmp/dl-cache openwrt/dl
-    echo "✅ Restored dl/ cache ($(ls openwrt/dl | wc -l) files)"
-  fi
+
+  # Restore caches into fresh clone
+  for dir in dl staging_dir build_dir; do
+    if [ -d "/tmp/$dir-cache" ]; then
+      mv "/tmp/$dir-cache" "openwrt/$dir"
+      echo "✅ Restored $dir cache"
+    fi
+  done
 elif [ -z $REPO_COMMIT ]; then
   pushd openwrt
   rm -rf files package
@@ -133,7 +157,7 @@ make defconfig
 # Section 6: Package Fixes
 # ============================================================
 
-# Set GOPROXY for Go modules (fix frp/adguardhome build)
+# Set GOPROXY for Go modules (fix frp build)
 export GOPROXY=https://goproxy.cn,https://goproxy.io,direct
 export GONOSUMCHECK=*
 export GOSUMDB=off
@@ -205,6 +229,22 @@ fi
 
 
 # ============================================================
+# Section 6.1: Build Performance Optimizations
+# ============================================================
+
+# Disable Python3 host PGO (saves ~8 min per build)
+# Host Python3 is only a build tool — PGO provides zero benefit to firmware quality
+PY3_FEED=feeds/packages/lang/python/python3
+if [ -f "$PY3_FEED/Makefile" ]; then
+  if grep -q -- '--enable-optimizations' "$PY3_FEED/Makefile"; then
+    sed -i 's/--enable-optimizations/--disable-optimizations/' "$PY3_FEED/Makefile"
+    echo "✅ python3 host: PGO disabled (--enable-optimizations → --disable-optimizations)"
+  else
+    echo "✅ python3 host: PGO already disabled"
+  fi
+fi
+
+# ============================================================
 # Section 7: Download
 # ============================================================
 
@@ -219,11 +259,11 @@ find dl -not -path "dl/go-mod-cache/*" -size 0 -type f -exec rm -f {} \;
 # Section 8: Go Packages Pre-compile
 # ============================================================
 
-# Go packages (frp, adguardhome, filebrowser) have intermittent parallel build
+# Go packages (frp) have intermittent parallel build
 # race conditions with -j16 due to shared Go module cache.
 # Pre-compile them with -j1 so the main -j16 build skips them.
 echo "=== Pre-compiling Go packages with -j1 ==="
-for go_pkg in frp adguardhome filebrowser; do
+for go_pkg in frp; do
   # Only pre-compile packages actually needed (check if any =y entry references this package)
   if ! grep '=y' .config 2>/dev/null | grep -qi "$go_pkg"; then
     echo "Skipping $go_pkg (not enabled in .config)"
