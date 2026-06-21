@@ -18,6 +18,18 @@ Arch="amd64"
 CPU_MODEL="${Arch}-v3"
 CLASH_META_REPOS_VERNESONG=${CLASH_META_REPOS_VERNESONG:-true}
 
+# ============================================================
+# Dropbear: remove DirectInterface 'lan' restriction (SSH on all interfaces)
+# ============================================================
+# Remove DirectInterface restriction AND deduplicate option enable
+# (source file has 2x option enable '1'; keep only the first)
+sed -i \
+  -e '/option _direct/d' \
+  -e '/option DirectInterface/d' \
+  -e '0,/^[[:space:]]*option enable '\''1'\''$/b' \
+  -e '/^[[:space:]]*option enable '\''1'\''$/d' \
+  package/network/services/dropbear/files/dropbear.config
+
 rm -rf feeds/luci/themes/luci-theme-argon
 git clone --depth 1 -b $LUCI_BRANCH https://github.com/jerrykuku/luci-theme-argon.git feeds/luci/themes/luci-theme-argon
 sed -i "s/\$(TOPDIR)\/luci.mk/\$(TOPDIR)\/feeds\/luci\/luci.mk/g" feeds/luci/themes/luci-theme-argon/Makefile
