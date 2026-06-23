@@ -995,7 +995,7 @@ echo "✅ openwrt-device.conf → /etc/"
 # ============================================================
 # Disable USB autosuspend (USB NIC stability)
 # ============================================================
-sed -i '/^exit 0/i echo -1 > /sys/module/usbcore/parameters/autosuspend' openwrt/package/base-files/files/etc/rc.local
+sed -i '/^exit 0/i echo -1 > /sys/module/usbcore/parameters/autosuspend' package/base-files/files/etc/rc.local
 echo "✅ USB autosuspend disabled"
 
 # ============================================================
@@ -1003,8 +1003,8 @@ echo "✅ USB autosuspend disabled"
 # Strategy: Keep autoneg ON (link stability), keep rx/tx checksum ON (performance)
 # Only disable TSO/GSO/GRO (prevents super-frames exceeding USB URB limits)
 # ============================================================
-mkdir -p openwrt/package/base-files/files/etc/hotplug.d/net
-cat > openwrt/package/base-files/files/etc/hotplug.d/net/99-r8152-offload <<'HOTPLUG'
+mkdir -p package/base-files/files/etc/hotplug.d/net
+cat > package/base-files/files/etc/hotplug.d/net/99-r8152-offload <<'HOTPLUG'
 #!/bin/sh
 # Disable TSO/GSO/GRO + set txqueuelen for Realtek USB NICs
 # TSO/GSO/GRO can cause USB deadlock (super-frames exceed URB limits)
@@ -1019,7 +1019,7 @@ ip link set "$DEVICENAME" txqueuelen 5000 2>/dev/null
 /usr/sbin/ethtool -K "$DEVICENAME" tso off gso off gro off 2>/dev/null
 logger -t "r8152-fix" "txqueuelen 5000, tso/gso/gro off for $DEVICENAME"
 HOTPLUG
-chmod +x openwrt/package/base-files/files/etc/hotplug.d/net/99-r8152-offload
+chmod +x package/base-files/files/etc/hotplug.d/net/99-r8152-offload
 echo "✅ r8152 hotplug script created (TSO/GSO/GRO)"
 
 # ============================================================
