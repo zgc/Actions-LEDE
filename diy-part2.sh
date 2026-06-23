@@ -999,23 +999,41 @@ sed -i '/^exit 0/i echo -1 > /sys/module/usbcore/parameters/autosuspend' openwrt
 echo "✅ USB autosuspend disabled"
 
 # ============================================================
-# r8152 USB NIC hotplug (checksum offload + txqueuelen)
+# r8152 USB NIC hotplug: disable TSO/GSO/GRO + set txqueuelen
+# Strategy: Keep autoneg ON (link stability), keep rx/tx checksum ON (performance)
+# Only disable TSO/GSO/GRO (prevents super-frames exceeding USB URB limits)
 # ============================================================
 mkdir -p openwrt/package/base-files/files/etc/hotplug.d/net
 cat > openwrt/package/base-files/files/etc/hotplug.d/net/99-r8152-offload <<'HOTPLUG'
 #!/bin/sh
-# Disable hardware checksum offload + increase txqueuelen for Realtek USB NICs
-# RTL8152/8153/8156 are known to deadlock when offload is enabled
+# Disable TSO/GSO/GRO + set txqueuelen for Realtek USB NICs
+# TSO/GSO/GRO can cause USB deadlock (super-frames exceed URB limits)
+# NOTE: do NOT disable rx/tx checksum — keep for performance
 
-[ "$ACTION" = "ifup" ] || exit 0
+[ "$ACTION" = "add" ] || exit 0
 
-DRIVER=$(ethtool -i "$DEVICE" 2>/dev/null | sed -n 's/^driver: //p')
+DRIVER=$(ethtool -i "$DEVICENAME" 2>/dev/null | sed -n 's/^driver: //p')
 [ "$DRIVER" = "r8152" ] || exit 0
 
-ethtool -K "$DEVICE" rx off tx off 2>/dev/null
-ip link set "$DEVICE" txqueuelen 5000 2>/dev/null
-logger -t "r8152-fix" "Applied offload/txqueuelen fixes for $DEVICE"
+ip link set "$DEVICENAME" txqueuelen 5000 2>/dev/null
+/usr/sbin/ethtool -K "$DEVICENAME" tso off gso off gro off 2>/dev/null
+logger -t "r8152-fix" "txqueuelen 5000, tso/gso/gro off for $DEVICENAME"
 HOTPLUG
 chmod +x openwrt/package/base-files/files/etc/hotplug.d/net/99-r8152-offload
-echo "✅ r8152 hotplug script created"
+echo "✅ r8152 hotplug script created (TSO/GSO/GRO)"
+
+# ============================================================
+# UPnP: Add friendly_name support to miniupnpd init script
+# ============================================================
+UPNPD_INIT="feeds/packages/net/miniupnpd/files/miniupnpd.init"
+if [ -f "$UPNPD_INIT" ]; then
+    grep -q "config friendly_name" "$UPNPD_INIT" 2>/dev/null || {
+        # Add config_get line + echo line
+        sed -i 's/config_get notify_interval config notify_interval/&
+	config_get friendly_name config friendly_name/' "$UPNPD_INIT"
+        sed -i 's/		\[ -n "$notify_interval" \] && echo "notify_interval=$notify_interval"/&
+		\[ -n "$friendly_name" \] \&\& echo "friendly_name=$friendly_name"/' "$UPNPD_INIT"
+        echo "✅ miniupnpd: friendly_name support patched"
+    }
+fi
 
