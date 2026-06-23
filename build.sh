@@ -157,7 +157,7 @@ make defconfig
 # Section 6: Package Fixes
 # ============================================================
 
-# Set GOPROXY for Go modules (fix frp/adguardhome build)
+# Set GOPROXY for Go modules (fix frp build)
 export GOPROXY=https://goproxy.cn,https://goproxy.io,direct
 export GONOSUMCHECK=*
 export GOSUMDB=off
@@ -259,11 +259,11 @@ find dl -not -path "dl/go-mod-cache/*" -size 0 -type f -exec rm -f {} \;
 # Section 8: Go Packages Pre-compile
 # ============================================================
 
-# Go packages (frp, adguardhome, filebrowser) have intermittent parallel build
+# Go packages (frp) have intermittent parallel build
 # race conditions with -j16 due to shared Go module cache.
 # Pre-compile them with -j1 so the main -j16 build skips them.
 echo "=== Pre-compiling Go packages with -j1 ==="
-for go_pkg in frp adguardhome filebrowser; do
+for go_pkg in frp; do
   # Only pre-compile packages actually needed (check if any =y entry references this package)
   if ! grep '=y' .config 2>/dev/null | grep -qi "$go_pkg"; then
     echo "Skipping $go_pkg (not enabled in .config)"
