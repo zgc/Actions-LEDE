@@ -993,21 +993,128 @@ cp "$GITHUB_WORKSPACE/openwrt-device.conf" package/base-files/files/etc/openwrt-
 echo "✅ openwrt-device.conf → /etc/"
 
 # ============================================================
-# Disable USB autosuspend (USB NIC stability)
+# r8152 USB NIC: rc.local — boot-time TSO/GSO/GRO disable + USB power mgmt
+# Strategy: Keep autoneg ON (stable), disable TSO/GSO/GRO only (prevents deadlock)
+# NOTE: Do NOT force autoneg off — r8152 driver flapping under forced mode.
+# NOTE: Do NOT ethtool -K rx/tx checksum — keep for performance.
 # ============================================================
-sed -i '/^exit 0/i echo -1 > /sys/module/usbcore/parameters/autosuspend' package/base-files/files/etc/rc.local
-echo "✅ USB autosuspend disabled"
+cat > package/base-files/files/etc/rc.local <<'RCLOCAL'
+# Put your custom commands here that should be executed once
+# the system init finished. By default this file does nothing.
+
+# r8152 TSO/GSO/GRO: disable to prevent USB deadlock under high TX load
+# Super-frames from TSO exceed USB URB limits when USB NIC is under heavy TX
+for i in 1 2 3 4 5; do
+  if [ -f /sys/class/net/eth2/carrier ] && [ "$(cat /sys/class/net/eth2/carrier)" = "1" ]; then
+    /usr/sbin/ethtool -K eth2 tso off gso off gro off 2>/dev/null
+    logger -t "r8152-fix" "TSO/GSO/GRO disabled on eth2 (attempt $i)"
+    break
+  fi
+  sleep 1
+done
+
+# Safety net: ethtool -K is driver-level, does not require active link
+/usr/sbin/ethtool -K eth2 tso off gso off gro off 2>/dev/null
+logger -t "r8152-fix" "TSO/GSO/GRO disabled (safety net)"
+
+ip link set eth2 txqueuelen 5000 2>/dev/null
+echo -1 > /sys/module/usbcore/parameters/autosuspend
+
+exit 0
+RCLOCAL
+echo "✅ rc.local: r8152 TSO/GSO/GRO + USB power mgmt"
+
+# ============================================================
+# r8152 USB NIC: Late-boot init script (START=99)
+# Runs after ALL init scripts (firewall, network) so offload stays off
+# Needed because rc.local runs too early — network/firewall restart later resets TSO/GSO
+# ============================================================
+mkdir -p package/base-files/files/etc/init.d
+cat > package/base-files/files/etc/init.d/r8152-fix <<'INITEOF'
+#!/bin/sh /etc/rc.common
+# r8152-fix: Disable TSO/GSO/GRO + USB device power mgmt on r8152 NIC
+# Fixes carrier flapping and USB deadlock
+# Runs at START=99 after all network services are up
+
+USE_PROCD=1
+START=99
+
+boot() {
+    sleep 5
+    apply_fix
+}
+
+start_service() {
+    apply_fix
+}
+
+apply_fix() {
+    local eth="eth2"
+
+    [ ! -d "/sys/class/net/$eth" ] && {
+        logger -t "r8152-fix" "WARNING: $eth does not exist, skipping"
+        return 1
+    }
+
+    # Fix 1: Disable TSO/GSO/GRO (super-frames exceed USB URB limits)
+    local tso_status
+    tso_status=$(/usr/sbin/ethtool -k "$eth" 2>/dev/null | grep "tcp-segmentation-offload:" | awk "{print \$2}")
+    if [ "$tso_status" = "off" ]; then
+        logger -t "r8152-fix" "TSO already off, no action needed"
+    else
+        /usr/sbin/ethtool -K "$eth" tso off gso off gro off 2>/dev/null && \
+            logger -t "r8152-fix" "TSO/GSO/GRO disabled (init.d)" || \
+            logger -t "r8152-fix" "ERROR: failed to disable offload"
+    fi
+
+    ip link set "$eth" txqueuelen 5000 2>/dev/null
+
+    # Fix 2: Disable USB device power management (prevents carrier flapping)
+    local usb_root
+    usb_root=$(readlink -f /sys/class/net/$eth/device 2>/dev/null)
+    usb_root=$(dirname "$usb_root" 2>/dev/null)
+    if [ -w "$usb_root/power/control" ]; then
+        echo "on" > "$usb_root/power/control" 2>/dev/null
+        echo "0" > "$usb_root/power/autosuspend_delay_ms" 2>/dev/null
+        logger -t "r8152-fix" "USB device power management disabled"
+    else
+        logger -t "r8152-fix" "WARNING: cannot disable USB device power mgmt"
+    fi
+}
+
+fix_status() {
+    local eth="eth2"
+    echo "=== r8152 Fix Status ==="
+    if [ -d "/sys/class/net/$eth" ]; then
+        echo "Interface: $eth"
+        /usr/sbin/ethtool -k "$eth" 2>/dev/null | grep -E "tcp-segmentation-offload:|generic-segmentation-offload:|generic-receive-offload:"
+        echo "txqueuelen: $(ip link show "$eth" | grep -o "qlen [0-9]*" | cut -d" " -f2)"
+        echo "Carrier changes: $(cat /sys/class/net/eth2/carrier_changes 2>/dev/null || echo 'N/A')"
+        local usb_root
+        usb_root=$(readlink -f /sys/class/net/$eth/device 2>/dev/null)
+        usb_root=$(dirname "$usb_root" 2>/dev/null)
+        if [ -r "$usb_root/power/control" ]; then
+            echo "USB device power control: $(cat "$usb_root/power/control" 2>/dev/null)"
+            echo "USB device autosuspend: $(cat "$usb_root/power/autosuspend_delay_ms" 2>/dev/null)ms"
+        fi
+    else
+        echo "Interface $eth does not exist"
+    fi
+    echo ""
+    echo "Last 10 log entries:"
+    logread | grep "r8152-fix" | tail -10
+}
+INITEOF
+chmod +x package/base-files/files/etc/init.d/r8152-fix
+echo "✅ r8152 init.d script created (START=99)"
 
 # ============================================================
 # r8152 USB NIC hotplug: disable TSO/GSO/GRO + set txqueuelen
-# Strategy: Keep autoneg ON (link stability), keep rx/tx checksum ON (performance)
-# Only disable TSO/GSO/GRO (prevents super-frames exceeding USB URB limits)
 # ============================================================
 mkdir -p package/base-files/files/etc/hotplug.d/net
 cat > package/base-files/files/etc/hotplug.d/net/99-r8152-offload <<'HOTPLUG'
 #!/bin/sh
 # Disable TSO/GSO/GRO + set txqueuelen for Realtek USB NICs
-# TSO/GSO/GRO can cause USB deadlock (super-frames exceed URB limits)
 # NOTE: do NOT disable rx/tx checksum — keep for performance
 
 [ "$ACTION" = "add" ] || exit 0
