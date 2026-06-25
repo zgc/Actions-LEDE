@@ -1130,17 +1130,7 @@ chmod +x package/base-files/files/etc/hotplug.d/net/99-r8152-offload
 echo "✅ r8152 hotplug script created (TSO/GSO/GRO)"
 
 # ============================================================
-# UPnP: Add friendly_name support to miniupnpd init script
 # ============================================================
-UPNPD_INIT="feeds/packages/net/miniupnpd/files/miniupnpd.init"
-if [ -f "$UPNPD_INIT" ]; then
-    grep -q "config friendly_name" "$UPNPD_INIT" 2>/dev/null || {
-        # Add config_get line + echo line
-        sed -i 's/config_get notify_interval config notify_interval/&
-	config_get friendly_name config friendly_name/' "$UPNPD_INIT"
-        sed -i 's/		\[ -n "$notify_interval" \] && echo "notify_interval=$notify_interval"/&
-		\[ -n "$friendly_name" \] \&\& echo "friendly_name=$friendly_name"/' "$UPNPD_INIT"
-        echo "✅ miniupnpd: friendly_name support patched"
-    }
-fi
+# UPnP: friendly_name is configured per-device via files/etc/config/upnpd in device repos (NUC8/ZBOX)
+# ============================================================
 
