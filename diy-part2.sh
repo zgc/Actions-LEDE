@@ -1134,13 +1134,3 @@ echo "✅ r8152 hotplug script created (TSO/GSO/GRO)"
 # UPnP: friendly_name is configured per-device via files/etc/config/upnpd in device repos (NUC8/ZBOX)
 # ============================================================
 
-
-# ============================================================
-# Microcode: Disable MICROCODE_LATE_FORCE_MINREV for Kaby Lake
-# Kernel 6.18+ refuses late microcode loading if the current revision
-# is too old (e.g. i3-7100U rev 0x8e needs 0xea+). Safe to disable.
-# ============================================================
-sed -i "s/CONFIG_MICROCODE_LATE_FORCE_MINREV=y/# CONFIG_MICROCODE_LATE_FORCE_MINREV is not set/" target/linux/x86/64/config-6.18 2>/dev/null
-test -f target/linux/x86/generic/config-6.18 && sed -i "s/CONFIG_MICROCODE_LATE_FORCE_MINREV=y/# CONFIG_MICROCODE_LATE_FORCE_MINREV is not set/" target/linux/x86/generic/config-6.18 2>/dev/null
-echo "✅ Kernel config: MICROCODE_LATE_FORCE_MINREV disabled"
-
