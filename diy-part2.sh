@@ -64,6 +64,8 @@ sed -i "s/uci -q set openclash.config.enable=0/uci -q set openclash.config.enabl
 
 sed -i "s|option command '.*'|option command '/bin/login -f root'|" feeds/packages/utils/ttyd/files/ttyd.config
 
+# (Type-C / USB-C support removed - BIOS hides pinctrl, unlikely to work)
+
 echo '
 
 config openclash 'config'
