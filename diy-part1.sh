@@ -86,11 +86,6 @@ cache_clone "luci-app-openclash" \
   "luci-app-openclash"
 
 
-# 4. smartdns (PikuZheng fork: Web UI + active upstream bugfix sync)
-cache_clone "smartdns" \
-  "https://github.com/PikuZheng/smartdns.git" \
-  "master" "package/network/services/smartdns"
-
 # 5. zerotier — GitHub regenerated tarball hash (updated 2026-06-15)
 #    Upstream now has e3b0c44... (empty hash), fix to actual tarball hash
 sed -i 's|PKG_HASH:=e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855|PKG_HASH:=2c607f573c6e38815433af289d364a689a203b18b51125f06c4472014d0657f0|' feeds/packages/net/zerotier/Makefile
