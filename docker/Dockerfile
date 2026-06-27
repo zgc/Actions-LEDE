@@ -13,7 +13,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libpython3-dev libreadline-dev libssl-dev libtool libyaml-dev \
     llvm lrzsz msmtp ninja-build nodejs npm patch pkgconf \
     python3 python3-cryptography python3-docutils python3-pip python3-ply \
-    python3-pyelftools python3-requests quilt re2c rsync scons \
+    python3-pyelftools python3-requests qemu-utils quilt re2c rsync scons \
     sharutils squashfs-tools subversion swig texinfo uglifyjs unzip vim \
     wget xmlto xxd zlib1g-dev zstd \
     && rm -rf /var/lib/apt/lists/*
