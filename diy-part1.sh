@@ -21,13 +21,13 @@ rm -rf package/emortal/luci-app-argon-config
 git clone --depth 1 -b master https://github.com/jerrykuku/luci-app-argon-config.git package/emortal/luci-app-argon-config
 
 # 3. openclash（优先 git clone，GitHub 不通则 fallback 到本地缓存）
-#    缓存仅为 GFW 容错，不阻碍版本更新
-OPENCLASH_CACHE="$GITHUB_WORKSPACE/build-cache/luci-app-openclash"
+#    BUILD_CACHE_DIR 控制缓存启用（device fork openwrt-device.conf 设置）
+OPENCLASH_CACHE="${BUILD_CACHE_DIR:+"$BUILD_CACHE_DIR/openclash/luci-app-openclash"}"
 rm -rf package/emortal/luci-app-openclash /tmp/openclash-tmp
 mkdir -p /tmp/openclash-tmp
 if git clone --depth 1 -b $OPENCLASH_BRANCH --filter=blob:none --sparse \
       https://github.com/vernesong/OpenClash.git --no-checkout /tmp/openclash-tmp 2>/dev/null; then
-  echo "✅ openclash: cloned from GitHub (dev branch)"
+  echo "✅ openclash: cloned from GitHub"
   pushd /tmp/openclash-tmp >/dev/null
   git sparse-checkout init --cone
   git sparse-checkout set luci-app-openclash
@@ -35,16 +35,18 @@ if git clone --depth 1 -b $OPENCLASH_BRANCH --filter=blob:none --sparse \
   popd >/dev/null
   mv /tmp/openclash-tmp/luci-app-openclash package/emortal/luci-app-openclash
   rm -rf /tmp/openclash-tmp
-  # 更新本地缓存，下次 GitHub 不通时使用
-  mkdir -p "$(dirname "$OPENCLASH_CACHE")"
-  rm -rf "$OPENCLASH_CACHE"
-  cp -r package/emortal/luci-app-openclash "$OPENCLASH_CACHE"
-  echo "✅ openclash: cache updated"
-elif [ -d "$OPENCLASH_CACHE" ]; then
+  # 更新本地缓存（仅在启用时）
+  if [ -n "$BUILD_CACHE_DIR" ]; then
+    mkdir -p "$(dirname "$OPENCLASH_CACHE")"
+    rm -rf "$OPENCLASH_CACHE"
+    cp -r package/emortal/luci-app-openclash "$OPENCLASH_CACHE"
+    echo "✅ openclash: cache updated"
+  fi
+elif [ -n "$BUILD_CACHE_DIR" ] && [ -d "$OPENCLASH_CACHE" ]; then
   echo "⚠️ openclash: GitHub clone failed, using local build-cache"
   cp -r "$OPENCLASH_CACHE" package/emortal/luci-app-openclash
 else
-  echo "❌ openclash: both GitHub clone and local cache failed"
+  echo "❌ openclash: GitHub clone failed, no cache available"
   exit 1
 fi
 
