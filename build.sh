@@ -122,7 +122,7 @@ done
 # Fix: Docker root ownership on feeds
 chown -R $(stat -c '%u:%g' .) feeds/ 2>/dev/null || true
 
-GITHUB_WORKSPACE=$GITHUB_WORKSPACE $GITHUB_WORKSPACE/$DIY_P1_SH
+GITHUB_WORKSPACE=$GITHUB_WORKSPACE BUILD_CACHE_DIR=$BUILD_CACHE_DIR $GITHUB_WORKSPACE/$DIY_P1_SH
 ./scripts/feeds update -f -a
 ./scripts/feeds install -a
 

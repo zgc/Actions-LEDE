@@ -1,20 +1,21 @@
-FROM ubuntu:22.04
+FROM ubuntu:latest
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV TZ=Asia/Shanghai
 ENV FORCE_UNSAFE_CONFIGURE=1
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    ack antlr3 asciidoc autoconf automake autopoint binutils bison build-essential \
+    ack asciidoc autoconf automake autopoint binutils bison build-essential \
     bzip2 ccache ca-certificates clang cmake cpio curl device-tree-compiler \
-    flex gawk gcc-multilib g++-multilib gettext genisoimage git gperf haveged \
-    help2man intltool libc6-dev-i386 libelf-dev libfuse-dev libglib2.0-dev \
-    libgmp3-dev libltdl-dev libmpc-dev libmpfr-dev libncurses5-dev \
-    libncursesw5-dev libpython3-dev libreadline-dev libssl-dev libtool \
-    llvm lrzsz msmtp ninja-build p7zip p7zip-full patch pkgconf python3 \
-    python3-pyelftools python3-setuptools qemu-utils rsync scons squashfs-tools \
-    subversion swig texinfo uglifyjs upx-ucl unzip vim wget xmlto xxd \
-    zlib1g-dev ruby ruby-dev \
+    fakeroot flex gawk gcc-multilib g++-multilib gettext genisoimage git gperf \
+    gnutls-dev haveged help2man intltool jq libc6-dev-i386 libelf-dev \
+    libglib2.0-dev libgmp3-dev libltdl-dev libmpc-dev libmpfr-dev libncurses-dev \
+    libpython3-dev libreadline-dev libssl-dev libtool libyaml-dev \
+    llvm lrzsz msmtp ninja-build nodejs npm patch pkgconf \
+    python3 python3-cryptography python3-docutils python3-pip python3-ply \
+    python3-pyelftools python3-requests qemu-utils quilt re2c rsync scons \
+    sharutils squashfs-tools subversion swig texinfo uglifyjs unzip vim \
+    wget xmlto xxd zlib1g-dev zstd \
     && rm -rf /var/lib/apt/lists/*
 
 RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
