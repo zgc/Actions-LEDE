@@ -12,44 +12,81 @@
 
 OPENCLASH_BRANCH=dev
 
+# ============================================================
+# cache_clone — 通用 GitHub 克隆 + 本地缓存回退
+#
+# 优先 git clone，失败时 fallback 到本地缓存。
+# BUILD_CACHE_DIR 有值时启用缓存（device fork openwrt-device.conf）。
+#
+# 用法:
+#   cache_clone <name> <url> <branch> <target> [<sparse_subdir>]
+#
+# 普通克隆:
+#   cache_clone "luci-theme-argon" "https://..." "master" "package/..."
+#
+# sparse 克隆（monorepo 取子目录）:
+#   cache_clone "luci-app-openclash" "https://..." "dev" "package/..." "luci-app-openclash"
+# ============================================================
+cache_clone() {
+  local name="$1" url="$2" branch="$3" target="$4" sparse="${5:-}"
+  local cache="${BUILD_CACHE_DIR:+"$BUILD_CACHE_DIR/$name"}"
+  local ok=false
+
+  rm -rf "$target"
+
+  if [ -n "$sparse" ]; then
+    local tmpdir="/tmp/cache-${name}"
+    rm -rf "$tmpdir" && mkdir -p "$tmpdir"
+    if git clone --depth 1 -b "$branch" --filter=blob:none --sparse \
+         "$url" --no-checkout "$tmpdir" 2>/dev/null; then
+      (cd "$tmpdir" && git sparse-checkout init --cone \
+        && git sparse-checkout set "$sparse" \
+        && git checkout)
+      mv "${tmpdir}/${sparse}" "$target"
+      rm -rf "$tmpdir"
+      ok=true
+    fi
+  else
+    if git clone --depth 1 -b "$branch" "$url" "$target" 2>/dev/null; then
+      ok=true
+    fi
+  fi
+
+  if $ok; then
+    echo "✅ ${name}: cloned from GitHub"
+    if [ -n "$BUILD_CACHE_DIR" ]; then
+      mkdir -p "$(dirname "$cache")"
+      rm -rf "$cache"
+      cp -r "$target" "$cache"
+      echo "✅ ${name}: cache updated"
+    fi
+  elif [ -n "$BUILD_CACHE_DIR" ] && [ -d "$cache" ]; then
+    echo "⚠️ ${name}: GitHub clone failed, using local build-cache"
+    cp -r "$cache" "$target"
+  else
+    echo "❌ ${name}: both GitHub clone and local cache failed"
+    exit 1
+  fi
+}
+
 # 1. luci-theme-argon（luci-app-argon-config 依赖的主题）
-rm -rf package/emortal/luci-theme-argon
-git clone --depth 1 -b master https://github.com/jerrykuku/luci-theme-argon.git package/emortal/luci-theme-argon
+cache_clone "luci-theme-argon" \
+  "https://github.com/jerrykuku/luci-theme-argon.git" \
+  "master" "package/emortal/luci-theme-argon"
 
 # 2. luci-app-argon-config
-rm -rf package/emortal/luci-app-argon-config
-git clone --depth 1 -b master https://github.com/jerrykuku/luci-app-argon-config.git package/emortal/luci-app-argon-config
+cache_clone "luci-app-argon-config" \
+  "https://github.com/jerrykuku/luci-app-argon-config.git" \
+  "master" "package/emortal/luci-app-argon-config"
 
-# 3. openclash（优先 git clone，GitHub 不通则 fallback 到本地缓存）
-#    缓存仅为 GFW 容错，不阻碍版本更新
-OPENCLASH_CACHE="$GITHUB_WORKSPACE/build-cache/luci-app-openclash"
-rm -rf package/emortal/luci-app-openclash /tmp/openclash-tmp
-mkdir -p /tmp/openclash-tmp
-if git clone --depth 1 -b $OPENCLASH_BRANCH --filter=blob:none --sparse \
-      https://github.com/vernesong/OpenClash.git --no-checkout /tmp/openclash-tmp 2>/dev/null; then
-  echo "✅ openclash: cloned from GitHub (dev branch)"
-  pushd /tmp/openclash-tmp >/dev/null
-  git sparse-checkout init --cone
-  git sparse-checkout set luci-app-openclash
-  git checkout
-  popd >/dev/null
-  mv /tmp/openclash-tmp/luci-app-openclash package/emortal/luci-app-openclash
-  rm -rf /tmp/openclash-tmp
-  # 更新本地缓存，下次 GitHub 不通时使用
-  mkdir -p "$(dirname "$OPENCLASH_CACHE")"
-  rm -rf "$OPENCLASH_CACHE"
-  cp -r package/emortal/luci-app-openclash "$OPENCLASH_CACHE"
-  echo "✅ openclash: cache updated"
-elif [ -d "$OPENCLASH_CACHE" ]; then
-  echo "⚠️ openclash: GitHub clone failed, using local build-cache"
-  cp -r "$OPENCLASH_CACHE" package/emortal/luci-app-openclash
-else
-  echo "❌ openclash: both GitHub clone and local cache failed"
-  exit 1
-fi
+# 3. luci-app-openclash
+cache_clone "luci-app-openclash" \
+  "https://github.com/vernesong/OpenClash.git" \
+  "$OPENCLASH_BRANCH" "package/emortal/luci-app-openclash" \
+  "luci-app-openclash"
 
 
-# 4. zerotier — GitHub regenerated tarball hash (updated 2026-06-15)
+# 5. zerotier — GitHub regenerated tarball hash (updated 2026-06-15)
 #    Upstream now has e3b0c44... (empty hash), fix to actual tarball hash
 sed -i 's|PKG_HASH:=e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855|PKG_HASH:=2c607f573c6e38815433af289d364a689a203b18b51125f06c4472014d0657f0|' feeds/packages/net/zerotier/Makefile
 
