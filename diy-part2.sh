@@ -35,14 +35,8 @@ git clone --depth 1 -b $LUCI_BRANCH https://github.com/jerrykuku/luci-theme-argo
 sed -i "s/\$(TOPDIR)\/luci.mk/\$(TOPDIR)\/feeds\/luci\/luci.mk/g" feeds/luci/themes/luci-theme-argon/Makefile
 
 
-rm -rf feeds/packages/net/smartdns/conf
-mkdir -p feeds/packages/net/smartdns/conf
-# SmartDNS conf: smartdns.conf generated locally, custom.conf fetched via curl
-cat > feeds/packages/net/smartdns/conf/smartdns.conf << 'SMARTDNS_EOF'
-# SmartDNS default configuration
-SMARTDNS_EOF
-sed -i 's#PKG_BUILD_DIR)/package/openwrt/custom.conf#CURDIR)/conf/custom.conf#g' feeds/packages/net/smartdns/Makefile
-sed -i 's#PKG_BUILD_DIR)/package/openwrt/files/etc/config/smartdns#CURDIR)/conf/smartdns.conf#g' feeds/packages/net/smartdns/Makefile
+# SmartDNS: PikuZheng fork — remove feeds version (Makefile generated in diy-part1.sh)
+rm -rf feeds/packages/net/smartdns
 for script in check_smartdns_connect.sh check_openclash_connect.sh check_wan_connect.sh \
               reset_get_img.sh reset_latest.sh reset_offline.sh reset_upload.sh; do
   cp "$GITHUB_WORKSPACE/scripts/$script" package/base-files/files/etc/
@@ -974,9 +968,7 @@ config client-rule
 config ip-rule
 
 
-' >feeds/packages/net/smartdns/conf/smartdns.conf
-
-curl --retry 5 -L https://github.com/pymumu/smartdns/raw/master/package/openwrt/custom.conf -o feeds/packages/net/smartdns/conf/custom.conf
+' >files/etc/config/smartdns
 
 # ============================================================
 # firmware_version (dynamic, generated at build time)

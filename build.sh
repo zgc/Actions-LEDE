@@ -53,41 +53,59 @@ if ! python3 -c "import setuptools" 2>/dev/null; then
 fi
 
 # ============================================================
+# Section 2.2: Build Cache Functions
+# ============================================================
+
+save_build_caches() {
+  [ -z "$BUILD_CACHE_DIR" ] && return 0
+  local src="${1:-openwrt}"
+  for dir in dl staging_dir build_dir; do
+    if [ -d "$src/$dir" ] && [ ! -L "$src/$dir" ]; then
+      mkdir -p "$BUILD_CACHE_DIR"
+      rm -rf "$BUILD_CACHE_DIR/$dir"
+      mv "$src/$dir" "$BUILD_CACHE_DIR/$dir"
+      echo "✅ Saved $dir to build cache"
+    fi
+  done
+}
+
+restore_build_caches() {
+  [ -z "$BUILD_CACHE_DIR" ] && return 0
+  local tgt="${1:-openwrt}"
+  # 2-step: cache → /tmp → target (target dir doesn't exist at restore time)
+  for dir in dl staging_dir build_dir; do
+    [ -d "$BUILD_CACHE_DIR/$dir" ] && mv "$BUILD_CACHE_DIR/$dir" "/tmp/$dir-cache"
+  done
+  for dir in dl staging_dir build_dir; do
+    [ -d "/tmp/$dir-cache" ] && mv "/tmp/$dir-cache" "$tgt/$dir" && echo "✅ Restored $dir from build cache"
+  done
+}
+
+# ============================================================
 # Section 3: Clone/Pull OpenWrt
 # ============================================================
 
 if [ ! -e openwrt ] || [ ! -d openwrt/.git ]; then
   # No valid git clone — need fresh clone
   # Build cache: saves cross-compiler toolchain (~10 min), dl (~5 min), build_dir (~5 min)
-  if [ -d openwrt ]; then
-    # Save existing caches (same container, rebuild path)
-    for dir in dl staging_dir build_dir; do
-      if [ -d "openwrt/$dir" ] && [ ! -L "openwrt/$dir" ]; then
-        mkdir -p "$BUILD_CACHE_DIR"
-        rm -rf "$BUILD_CACHE_DIR/$dir"
-        mv "openwrt/$dir" "$BUILD_CACHE_DIR/$dir"
-      fi
-    done
-    [ -d "$BUILD_CACHE_DIR" ] && echo "✅ Saved build caches to $BUILD_CACHE_DIR"
-  elif [ -n "$BUILD_CACHE_DIR" ] && [ -d "$BUILD_CACHE_DIR" ]; then
-    # Restore caches from persistent storage (new container with Docker volume)
-    for dir in dl staging_dir build_dir; do
-      if [ -d "$BUILD_CACHE_DIR/$dir" ]; then
-        mv "$BUILD_CACHE_DIR/$dir" "/tmp/$dir-cache"
-      fi
-    done
-  fi
+  # Save existing caches before wiping (Docker volume persistence)
+  [ -d openwrt ] && save_build_caches
 
   rm -rf openwrt
-  git clone --depth 1 $REPO_URL -b $REPO_BRANCH openwrt
-
-  # Restore caches into fresh clone
-  for dir in dl staging_dir build_dir; do
-    if [ -d "/tmp/$dir-cache" ]; then
-      mv "/tmp/$dir-cache" "openwrt/$dir"
-      echo "✅ Restored $dir cache"
-    fi
+  # GnuTLS intermittent TLS error workaround: HTTP/1.1 + retry loop
+  git config --global http.version HTTP/1.1
+  for _ in 1 2 3; do
+    rm -rf openwrt
+    git clone --depth 1 $REPO_URL -b $REPO_BRANCH openwrt && break
+    echo "⚠️ git clone failed, retrying..."
+    sleep 3
   done
+  if [ ! -f openwrt/Makefile ]; then
+    echo "❌ git clone failed after 3 attempts"
+    exit 1
+  fi
+
+  restore_build_caches
 elif [ -z $REPO_COMMIT ]; then
   pushd openwrt
   rm -rf files package
@@ -122,26 +140,19 @@ done
 # Fix: Docker root ownership on feeds
 chown -R $(stat -c '%u:%g' .) feeds/ 2>/dev/null || true
 
-GITHUB_WORKSPACE=$GITHUB_WORKSPACE BUILD_CACHE_DIR=$BUILD_CACHE_DIR $GITHUB_WORKSPACE/$DIY_P1_SH
+if ! GITHUB_WORKSPACE=$GITHUB_WORKSPACE BUILD_CACHE_DIR=$BUILD_CACHE_DIR $GITHUB_WORKSPACE/$DIY_P1_SH; then
+  echo "❌ diy-part1.sh failed"
+  exit 1
+fi
 ./scripts/feeds update -f -a
 ./scripts/feeds install -a
-
-# Fix: smartdns conf/custom.conf may be missing from some feeds snapshots
-if [ -d feeds/packages/net/smartdns/conf ] && [ ! -f feeds/packages/net/smartdns/conf/custom.conf ]; then
-  echo '# Add custom settings here.' > feeds/packages/net/smartdns/conf/custom.conf
-  echo "✅ smartdns: created missing conf/custom.conf"
-fi
 
 # ============================================================
 # Section 5: Config
 # ============================================================
 
 [ -e $GITHUB_WORKSPACE/$CONFIG_FILE ] && cp $GITHUB_WORKSPACE/$CONFIG_FILE .config
-make defconfig
-
-# LuCI 25.12 removed luci-base/host/compile (po2lmo no longer needed)
-# echo "编译 luci-base 生成 po2lmo..."
-# make package/luci-base/host/compile -j$(nproc) || make package/luci-base/host/compile -j1 V=s
+make defconfig || { echo "❌ defconfig failed"; exit 1; }
 
 popd
 
@@ -151,7 +162,7 @@ chmod +x $DIY_P2_SH
 
 pushd openwrt
 GITHUB_WORKSPACE=$GITHUB_WORKSPACE $GITHUB_WORKSPACE/$DIY_P2_SH
-make defconfig
+make defconfig || { echo "❌ defconfig (post diy) failed"; exit 1; }
 
 # ============================================================
 # Section 6: Package Fixes
@@ -229,7 +240,7 @@ fi
 
 
 # ============================================================
-# Section 6.1: Build Performance Optimizations
+# Section 7: Build Performance Optimizations
 # ============================================================
 
 # Disable Python3 host PGO (saves ~8 min per build)
@@ -245,19 +256,48 @@ if [ -f "$PY3_FEED/Makefile" ]; then
 fi
 
 # ============================================================
-# Section 7: Download
+# Section 8: Download
 # ============================================================
 
 # Drop caches to free memory before compilation (prevents OOM in Docker)
 sync; echo 3 > /proc/sys/vm/drop_caches 2>/dev/null || true
 
-make download -j8 || make download -j1 V=s
+make download -j8 || make download -j1 V=s || { echo "❌ make download failed"; exit 1; }
 find dl -not -path "dl/go-mod-cache/*" -size -1024c -type f -exec rm -f {} \;
 find dl -not -path "dl/go-mod-cache/*" -size 0 -type f -exec rm -f {} \;
 
+# Build and install host tools (sed, autoconf, automake, m4, libtool, etc.)
+# Required before any host package compile — make download only downloads, doesn't build
+#
+# util-linux uses meson which requires python3 at staging_dir/host/bin/python3.
+# Symlink system python3 there temporarily; proper feeds python3 host compile
+# happens in the Go/packages section later (overwrites this symlink).
+mkdir -p staging_dir/host/bin
+if ! [ -f staging_dir/host/bin/python3 ]; then
+  ln -sf "$(which python3)" staging_dir/host/bin/python3
+  echo "✅ symlinked system python3 → staging_dir/host/bin/python3"
+fi
+echo "=== Building and installing host tools ==="
+make tools/install -j$(nproc) V=s || { echo "❌ tools/install failed"; exit 1; }
+echo "✅ host tools installed"
+
 # ============================================================
-# Section 8: Go Packages Pre-compile
+# Section 9: Go Packages Pre-compile
 # ============================================================
+
+# Pre-compile python3 host tooling (needed by meson for apk/host build)
+# Without this, frp pre-compile can trigger apk/host which needs python3 host via meson.
+# feeds install symlinks: feeds/packages/lang/python/python3 -> package/feeds/packages/python3
+if ls package/feeds/packages/python3/Makefile 2>/dev/null; then
+  echo "=== Pre-compiling python3 host tooling (for meson/apk) ==="
+  make package/feeds/packages/python3/host/compile -j1 V=s
+  # Symlink python3 from hostpkg→host so meson cross-file can find it
+  if [ -f staging_dir/hostpkg/bin/python3 ]; then
+    ln -sf ../../hostpkg/bin/python3 staging_dir/host/bin/python3
+    echo "✅ symlinked hostpkg/bin/python3 → host/bin/python3"
+  fi
+  echo "✅ python3 host build done"
+fi
 
 # Go packages (frp) have intermittent parallel build
 # race conditions with -j16 due to shared Go module cache.
@@ -271,17 +311,17 @@ for go_pkg in frp; do
   fi
   if [ -d "package/feeds/packages/$go_pkg" ]; then
     echo "Pre-compiling $go_pkg with -j1..."
-    make "package/feeds/packages/$go_pkg/compile" -j1 V=s 2>&1 | tail -5
-    if [ ${PIPESTATUS[0]} -ne 0 ]; then
+    make "package/feeds/packages/$go_pkg/compile" -j1 V=s
+    if [ $? -ne 0 ]; then
       echo "WARNING: $go_pkg failed, retrying..."
-      make "package/feeds/packages/$go_pkg/compile" -j1 V=s 2>&1 | tail -5
+      make "package/feeds/packages/$go_pkg/compile" -j1 V=s
     fi
   fi
 done
 echo "=== Go packages pre-compilation done ==="
 
 # ============================================================
-# Section 9: Main Build
+# Section 10: Main Build
 # ============================================================
 
 # Clean stale squashfs and target-dir caches to force prepare_rootfs
@@ -293,8 +333,21 @@ rm -rf build_dir/target-x86_64_musl/linux-x86_64/target-dir-*
 
 echo "=== Stale squashfs/target-dir cleaned ==="
 
-make -j$(nproc) || make -j1 || make -j1 V=s
+make -j$(nproc) V=s
 BUILD_RC=$?
+if [ $BUILD_RC -ne 0 ]; then
+  echo "⚠️ First attempt failed, cleaning kernel build dir and retrying..."
+  echo "=== target/linux/clean ==="
+  make target/linux/clean V=s 2>/dev/null || true
+  rm -rf build_dir/target-x86_64_musl/linux-x86_64/linux-*
+  # Also clean packages that are known to have transient ZFS parallel-build races
+  for pkg in intel-microcode linux-atm; do
+    make package/firmware/$pkg/clean V=s 2>/dev/null || true
+    make package/kernel/$pkg/clean V=s 2>/dev/null || true
+  done
+  make -j$(nproc) V=s
+  BUILD_RC=$?
+fi
 popd
 
 if [ $BUILD_RC -ne 0 ]; then
@@ -304,7 +357,7 @@ if [ $BUILD_RC -ne 0 ]; then
 fi
 
 # ============================================================
-# Section 10: Save Config & Copy Firmware
+# Section 11: Save Config & Copy Firmware
 # ============================================================
 
 

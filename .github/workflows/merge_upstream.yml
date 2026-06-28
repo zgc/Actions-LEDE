@@ -10,11 +10,10 @@ name: Merge-upstream
 
 on:
   workflow_dispatch:
-  schedule:
-    - cron: '0 */8 * * *'
-  watch:
-    types:
-      - 'started'
+    inputs:
+      confirm:
+        description: 'Type YES to confirm rebase from P3TERX template'
+        required: true
 
 jobs:
   merge:
