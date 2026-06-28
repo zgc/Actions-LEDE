@@ -79,7 +79,18 @@ if [ ! -e openwrt ] || [ ! -d openwrt/.git ]; then
   fi
 
   rm -rf openwrt
-  git clone --depth 1 $REPO_URL -b $REPO_BRANCH openwrt
+  # GnuTLS intermittent TLS error workaround: HTTP/1.1 + retry loop
+  git config --global http.version HTTP/1.1
+  for _ in 1 2 3; do
+    rm -rf openwrt
+    git clone --depth 1 $REPO_URL -b $REPO_BRANCH openwrt && break
+    echo "⚠️ git clone failed, retrying..."
+    sleep 3
+  done
+  if [ ! -f openwrt/Makefile ]; then
+    echo "❌ git clone failed after 3 attempts"
+    exit 1
+  fi
 
   # Restore caches into fresh clone
   for dir in dl staging_dir build_dir; do
@@ -137,7 +148,7 @@ fi
 # ============================================================
 
 [ -e $GITHUB_WORKSPACE/$CONFIG_FILE ] && cp $GITHUB_WORKSPACE/$CONFIG_FILE .config
-make defconfig
+make defconfig || { echo "❌ defconfig failed"; exit 1; }
 
 # LuCI 25.12 removed luci-base/host/compile (po2lmo no longer needed)
 # echo "编译 luci-base 生成 po2lmo..."
@@ -151,7 +162,7 @@ chmod +x $DIY_P2_SH
 
 pushd openwrt
 GITHUB_WORKSPACE=$GITHUB_WORKSPACE $GITHUB_WORKSPACE/$DIY_P2_SH
-make defconfig
+make defconfig || { echo "❌ defconfig (post diy) failed"; exit 1; }
 
 # ============================================================
 # Section 6: Package Fixes
@@ -251,13 +262,33 @@ fi
 # Drop caches to free memory before compilation (prevents OOM in Docker)
 sync; echo 3 > /proc/sys/vm/drop_caches 2>/dev/null || true
 
-make download -j8 || make download -j1 V=s
+make download -j8 || make download -j1 V=s || { echo "❌ make download failed"; exit 1; }
 find dl -not -path "dl/go-mod-cache/*" -size -1024c -type f -exec rm -f {} \;
 find dl -not -path "dl/go-mod-cache/*" -size 0 -type f -exec rm -f {} \;
+
+# Build and install host tools (sed, autoconf, automake, m4, libtool, etc.)
+# Required before any host package compile — make download only downloads, doesn't build
+echo "=== Building and installing host tools ==="
+make tools/install -j$(nproc) V=s || { echo "❌ tools/install failed"; exit 1; }
+echo "✅ host tools installed"
 
 # ============================================================
 # Section 8: Go Packages Pre-compile
 # ============================================================
+
+# Pre-compile python3 host tooling (needed by meson for apk/host build)
+# Without this, frp pre-compile can trigger apk/host which needs python3 host via meson.
+# feeds install symlinks: feeds/packages/lang/python/python3 -> package/feeds/packages/python3
+if ls package/feeds/packages/python3/Makefile 2>/dev/null; then
+  echo "=== Pre-compiling python3 host tooling (for meson/apk) ==="
+  make package/feeds/packages/python3/host/compile -j1 V=s
+  # Symlink python3 from hostpkg→host so meson cross-file can find it
+  if [ -f staging_dir/hostpkg/bin/python3 ]; then
+    ln -sf ../../hostpkg/bin/python3 staging_dir/host/bin/python3
+    echo "✅ symlinked hostpkg/bin/python3 → host/bin/python3"
+  fi
+  echo "✅ python3 host build done"
+fi
 
 # Go packages (frp) have intermittent parallel build
 # race conditions with -j16 due to shared Go module cache.
@@ -271,10 +302,10 @@ for go_pkg in frp; do
   fi
   if [ -d "package/feeds/packages/$go_pkg" ]; then
     echo "Pre-compiling $go_pkg with -j1..."
-    make "package/feeds/packages/$go_pkg/compile" -j1 V=s 2>&1 | tail -5
-    if [ ${PIPESTATUS[0]} -ne 0 ]; then
+    make "package/feeds/packages/$go_pkg/compile" -j1 V=s
+    if [ $? -ne 0 ]; then
       echo "WARNING: $go_pkg failed, retrying..."
-      make "package/feeds/packages/$go_pkg/compile" -j1 V=s 2>&1 | tail -5
+      make "package/feeds/packages/$go_pkg/compile" -j1 V=s
     fi
   fi
 done
@@ -293,8 +324,16 @@ rm -rf build_dir/target-x86_64_musl/linux-x86_64/target-dir-*
 
 echo "=== Stale squashfs/target-dir cleaned ==="
 
-make -j$(nproc) || make -j1 || make -j1 V=s
+make -j$(nproc) V=s
 BUILD_RC=$?
+if [ $BUILD_RC -ne 0 ]; then
+  echo "⚠️ First attempt failed, cleaning kernel build dir and retrying..."
+  echo "=== target/linux/clean ==="
+  make target/linux/clean V=s 2>/dev/null || true
+  rm -rf build_dir/target-x86_64_musl/linux-x86_64/linux-*
+  make -j$(nproc) V=s
+  BUILD_RC=$?
+fi
 popd
 
 if [ $BUILD_RC -ne 0 ]; then
