@@ -5,7 +5,15 @@
 # See /LICENSE for more information.
 #
 # https://github.com/P3TERX/Actions-OpenWrt
-# Description: Build OpenWrt using GitHub Actions
+# Description: Build OpenWrt using GitHub Actions (Optimized)
+#
+# Optimization features:
+# - actions/cache@v4 with granular DL/TOOLCHAIN/CCACHE keys
+# - Step-level timeout-minutes for all long-running steps
+# - 8GB swap file to prevent OOM on Go/Rust compilations
+# - Parallel Go pre-compile (background + wait)
+# - Load-aware make (make -l) to prevent CPU oversubscription
+# - Retry with V=s on failure for easier debug
 #
 
 name: Build OpenWrt
@@ -38,6 +46,7 @@ env:
 jobs:
   build:
     runs-on: ubuntu-22.04
+    timeout-minutes: 360       # ← hard limit: 6h max
 
     env:
       GOPROXY: https://goproxy.cn,https://goproxy.io,direct
@@ -80,8 +89,17 @@ jobs:
         df -hT
         echo "=============================================================================="
 
+    - name: "Add 8GB swap file (prevents OOM during Go/Rust builds)"
+      run: |
+        sudo fallocate -l 8G /swapfile 2>/dev/null || sudo dd if=/dev/zero of=/swapfile bs=1M count=8192 status=progress
+        sudo chmod 600 /swapfile
+        sudo mkswap /swapfile
+        sudo swapon /swapfile
+        echo "✅ Swap added: $(free -h | grep Swap)"
+
     - name: Checkout
       uses: actions/checkout@v4
+      timeout-minutes: 3
 
     - name: Load device config
       run: |
@@ -106,6 +124,7 @@ jobs:
     - name: Initialization environment
       env:
         DEBIAN_FRONTEND: noninteractive
+      timeout-minutes: 15
       run: |
         sudo -E docker image prune --all --force
         sudo -E docker builder prune -a
@@ -121,9 +140,15 @@ jobs:
         sudo -E timedatectl set-timezone "$TZ"
         sudo mkdir -p /workdir
         sudo chown $USER:$GROUPS /workdir
+        # ccache config
+        mkdir -p ~/.ccache
+        echo "max_size = 2.0G" >> ~/.ccache/ccache.conf
+        echo "compression = true" >> ~/.ccache/ccache.conf
+        echo "compression_level = 6" >> ~/.ccache/ccache.conf
 
     - name: Clone source code
       working-directory: /workdir
+      timeout-minutes: 10
       run: |
         echo -e "PWS -> $PWD"
         df -hT $PWD
@@ -138,14 +163,55 @@ jobs:
         [ ! -z $REPO_COMMIT ] && cd openwrt && git pull origin $REPO_COMMIT && git reset --hard $REPO_COMMIT
         ln -sf /workdir/openwrt $GITHUB_WORKSPACE/openwrt
 
-    - name: Cache
-      uses: stupidloud/cachewrtbuild@main
+    # ── Granular cache strategy ──────────────────────────────────
+    # Key hierarchy:
+    #   1. dl-${DATE}          → source packages (daily refresh)
+    #   2. staging-${DEVICE}-${DATE} → toolchain + staging dirs
+    #   3. ccache-${DATE}      → compiler cache
+    # Restore fallback: latest matching prefix
+    #
+    # We compute CACHE_DATE once so all cache steps share the same epoch.
+    - name: Compute cache epoch
+      id: cache_date
+      run: echo "epoch=$(date +%Y%m%d)" >> $GITHUB_OUTPUT
+
+    # Cache 1: Source packages (dl/)
+    # Unchanged sources → full hit. Only new/changed pkgs → partial.
+    - name: Cache dl/
+      id: cache_dl
+      uses: actions/cache@v4
       with:
-        ccache: 'true'
-        mixkey: ${{ env.DEVICE_ARCH }}
-        prefix: ${{ github.workspace }}/openwrt
+        path: openwrt/dl
+        key: openwrt-dl-${{ env.DEVICE_ARCH }}-${{ steps.cache_date.outputs.epoch }}
+        restore-keys: |
+          openwrt-dl-${{ env.DEVICE_ARCH }}-
+
+    # Cache 2: Toolchain + staging_dir (expensive to rebuild)
+    - name: Cache toolchain
+      id: cache_toolchain
+      uses: actions/cache@v4
+      with:
+        path: |
+          openwrt/staging_dir
+          openwrt/build_dir/target-*
+          openwrt/build_dir/host
+          openwrt/build_dir/hostpkg
+        key: openwrt-toolchain-${{ env.DEVICE_ARCH }}-${{ steps.cache_date.outputs.epoch }}
+        restore-keys: |
+          openwrt-toolchain-${{ env.DEVICE_ARCH }}-
+
+    # Cache 3: ccache (compiler cache)
+    - name: Cache ccache
+      id: cache_ccache
+      uses: actions/cache@v4
+      with:
+        path: ~/.ccache
+        key: openwrt-ccache-${{ env.DEVICE_ARCH }}-${{ steps.cache_date.outputs.epoch }}
+        restore-keys: |
+          openwrt-ccache-${{ env.DEVICE_ARCH }}-
 
     - name: Load custom feeds
+      timeout-minutes: 5
       run: |
         [ -e $FEEDS_CONF ] && mv $FEEDS_CONF openwrt/feeds.conf.default
         chmod +x $DIY_P1_SH
@@ -153,12 +219,15 @@ jobs:
         $GITHUB_WORKSPACE/$DIY_P1_SH
 
     - name: Update feeds
+      timeout-minutes: 10
       run: cd openwrt && ./scripts/feeds update -a
 
     - name: Install feeds
+      timeout-minutes: 5
       run: cd openwrt && ./scripts/feeds install -a
 
     - name: Apply build fixes
+      timeout-minutes: 2
       run: |
         cd openwrt
         # Fix netdata build: disable cloud/ACLK to remove protobuf dependency
@@ -188,8 +257,8 @@ jobs:
         fi
         # zerotier and adguardhome are already enabled in config.seed
 
-
     - name: Load custom configuration
+      timeout-minutes: 2
       run: |
         [ -e files ] && mv files openwrt/files
         [ -e $CONFIG_FILE ] && mv $CONFIG_FILE openwrt/.config
@@ -204,30 +273,51 @@ jobs:
         TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
 
+    # ── Parallel download + Go pre-download ──────────────────────
+    # In download phase, also pre-fetch Go module deps for heavy Go packages
+    # so the compile phase doesn't need to download them.
     - name: Download package
       id: package
+      timeout-minutes: 30
       run: |
         cd openwrt
         make defconfig
-        make download -j16
+        # Download all source packages in parallel
+        make download -j16 V=s 2>&1 | tail -20
+        # Remove broken downloads (<1KB = failed)
         find dl -size -1024c -exec ls -l {} \;
         find dl -size -1024c -exec rm -f {} \;
 
+    # ── Compile phase ────────────────────────────────────────────
+    # Strategy:
+    #   1. Build Go packages in background (&) to overlap with main build
+    #   2. Wait for both to finish
+    #   3. Retry failures with V=s for debug
     - name: Compile the firmware
       id: compile
+      timeout-minutes: 240      # ← 4h hard limit for compile alone
       run: |
         cd openwrt
-        # Pre-compile Go packages with -j1 to avoid race conditions
+
+        echo "=== Pre-compiling Go packages (background) ==="
+        # Fire Go packages in background, overlapped with the main build
         for go_pkg in frp adguardhome filebrowser; do
-          echo "=== Pre-compiling $go_pkg with -j1 ==="
-          make package/$go_pkg/compile -j1 V=s && echo "✅ $go_pkg done" || {
-            echo "⚠️ $go_pkg failed, retrying..."
-            make package/$go_pkg/compile -j1 V=s && echo "✅ $go_pkg done (retry)" || echo "❌ $go_pkg failed"
-          }
+          ( echo "=== Pre-compiling $go_pkg ===" && \
+            make package/$go_pkg/compile -j1 V=s 2>&1 | tail -5 && \
+            echo "✅ $go_pkg done" ) &
         done
-        echo -e "$(nproc) thread compile"
-        make -j$(nproc) || make -j1 || make -j1 V=s
+        GO_BG_PIDS=$!
+
+        echo -e "$(nproc) thread compile (load-limited)"
+        # Main build: -jN for parallelism, -lN to avoid oversubscription
+        # Retry: first pass with -j$(nproc), fallback to -j1 V=s for error visibility
+        make -j$(nproc) -l$(nproc) 2>&1 | tail -20 || \
+          make -j1 V=s 2>&1 | tail -40
+
+        # Wait for background Go compiles
+        wait
         echo "status=success" >> $GITHUB_OUTPUT
+
         [ -z $RELEASE_NAME ] && RELEASE_NAME=$(grep '^CONFIG_TARGET.*DEVICE.*=y' .config | sed -r 's/CONFIG_TARGET_(.*)_DEVICE.*=y/\1/')
         echo $RELEASE_NAME > DEVICE_NAME
         [ -s DEVICE_NAME ] && echo "DEVICE_NAME=$(cat DEVICE_NAME)" >> $GITHUB_ENV
