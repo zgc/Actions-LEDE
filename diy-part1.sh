@@ -121,6 +121,10 @@ if [ -z "$SM_VERSION" ]; then
   SM_VERSION="$SM_UI_VER_FALLBACK"
 fi
 
+# Sanitize version: apk mkpkg rejects 'v' prefix in version components (e.g. 1.2026.v48.2.1)
+# Remove 'v' when preceded by a dot and followed by digit(s): .v48 → .48
+SM_VERSION="$(echo "$SM_VERSION" | sed 's/\.v\([0-9]\)/.\1/g')"
+
 # Clone + retry
 sm_ok=false
 for attempt in 1 2 3 4 5; do
