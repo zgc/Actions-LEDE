@@ -164,6 +164,12 @@ pushd openwrt
 GITHUB_WORKSPACE=$GITHUB_WORKSPACE $GITHUB_WORKSPACE/$DIY_P2_SH
 make defconfig || { echo "❌ defconfig (post diy) failed"; exit 1; }
 
+# Prevent false-positive full rebuild due to defconfig timestamp change.
+# make defconfig updates .config mtime, which makes all existing .built stamps
+# appear stale. The solution: touch existing .built to match .config so make only
+# compiles genuinely new packages (like smartdns) that have no .built yet.
+find build_dir/target-*/.built -exec touch -r .config {} \; 2>/dev/null || true
+
 # ============================================================
 # Section 6: Package Fixes
 # ============================================================
