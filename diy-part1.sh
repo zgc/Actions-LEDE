@@ -131,6 +131,7 @@ for attempt in 1 2 3 4 5; do
     if [ -f package/emortal/smartdns/Makefile ]; then
       sm_ok=true
       echo "✅ smartdns: cloned from GitHub ($SM_TAG)"
+  rm -f package/emortal/smartdns/package/openwrt/Makefile
       break
     fi
   fi
