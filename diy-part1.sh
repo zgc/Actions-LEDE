@@ -307,6 +307,12 @@ define Build/Prepare
 	cp -rf $(CURDIR)/../smartdns/package/luci-compat $(PKG_BUILD_DIR)/package/
 endef
 
+define Build/Compile
+endef
+
+define Build/InstallDev
+endef
+
 $(eval $(call BuildPackage,luci-app-smartdns))
 LUCI_MK_EOF
 sed -i "s/__PKG_VERSION__/${SM_VERSION}/" package/emortal/luci-app-smartdns/Makefile
