@@ -251,7 +251,7 @@ $(eval $(call BuildPackage,smartdns))
 $(eval $(call BuildPackage,smartdns-ui))
 
 PKG_MK_EOF
-sed -i "s/__PKG_VERSION__/${SM_VERSION}/" package/emortal/smartdns/Makefile package/emortal/luci-app-smartdns/Makefile
+sed -i "s/__PKG_VERSION__/${SM_VERSION}/" package/emortal/smartdns/Makefile
 echo "✅ smartdns: generated OpenWrt package Makefile"
 
 # === luci-app-smartdns (separate Makefile in emortal) ===
