@@ -290,23 +290,31 @@ jobs:
 
     # ── Compile phase ────────────────────────────────────────────
     # Strategy:
-    #   1. Build Go packages in background (&) to overlap with main build
-    #   2. Wait for both to finish
-    #   3. Retry failures with V=s for debug
+    #   1. Only pre-compile Go packages that are actually enabled in config
+    #   2. Fire them in background (&) to overlap with main build
+    #   3. Wait for background compiles to finish
+    #   4. Retry failures with V=s for debug
     - name: Compile the firmware
       id: compile
       timeout-minutes: 240      # ← 4h hard limit for compile alone
       run: |
         cd openwrt
 
-        echo "=== Pre-compiling Go packages (background) ==="
-        # Fire Go packages in background, overlapped with the main build
+        echo "=== Pre-compiling enabled Go packages (background) ==="
+        # Check config to find which Go packages are actually selected
+        # Only pre-compile those; unselected packages skip silently.
         for go_pkg in frp adguardhome filebrowser; do
-          ( echo "=== Pre-compiling $go_pkg ===" && \
-            make package/$go_pkg/compile -j1 V=s 2>&1 | tail -5 && \
-            echo "✅ $go_pkg done" ) &
+          # frp uses 'frpc' package name; map Go binary name to make target
+          case "$go_pkg" in
+            frp)        pkg_target="frpc" ;;
+            *)          pkg_target="$go_pkg" ;;
+          esac
+          if grep -q "CONFIG_PACKAGE_luci-app-${pkg_target}=y\|CONFIG_PACKAGE_${pkg_target}=y" .config 2>/dev/null; then
+            ( echo "=== Pre-compiling $go_pkg (target: $pkg_target) ===" && \
+              make package/$pkg_target/compile -j1 V=s 2>&1 | tail -5 && \
+              echo "✅ $go_pkg done" ) &
+          fi
         done
-        GO_BG_PIDS=$!
 
         echo -e "$(nproc) thread compile (load-limited)"
         # Main build: -jN for parallelism, -lN to avoid oversubscription
