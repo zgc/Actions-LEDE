@@ -146,9 +146,6 @@ if ! GITHUB_WORKSPACE=$GITHUB_WORKSPACE BUILD_CACHE_DIR=$BUILD_CACHE_DIR $GITHUB
 fi
 ./scripts/feeds update -f -a
 ./scripts/feeds install -a
-# Remove feed's luci-app-smartdns to prevent override of PikuZheng smartdns Makefile
-# (which defines smartdns, smartdns-ui, and luci-app-smartdns correctly)
-rm -rf package/feeds/luci/luci-app-smartdns
 
 # ============================================================
 # Section 5: Config

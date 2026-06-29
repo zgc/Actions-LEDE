@@ -124,11 +124,11 @@ fi
 # Clone + retry
 sm_ok=false
 for attempt in 1 2 3 4 5; do
-  rm -rf package/network/services/smartdns
+  rm -rf package/emortal/smartdns
   if git -c http.version=HTTP/1.1 clone --depth 1 --single-branch -b "$SM_TAG" \
     "https://github.com/PikuZheng/smartdns.git" \
-    "package/network/services/smartdns"; then
-    if [ -f package/network/services/smartdns/Makefile ]; then
+    "package/emortal/smartdns"; then
+    if [ -f package/emortal/smartdns/Makefile ]; then
       sm_ok=true
       echo "✅ smartdns: cloned from GitHub ($SM_TAG)"
       break
@@ -145,7 +145,7 @@ fi
 # Generate OpenWrt package Makefile (once, after successful clone)
 # Overwrites upstream C-project Makefile with OpenWrt package definition
 _sm_root="${GITHUB_WORKSPACE:-$(dirname "$0")}"
-cat > package/network/services/smartdns/Makefile << 'PKG_MK_EOF'
+cat > package/emortal/smartdns/Makefile << 'PKG_MK_EOF'
 PKG_NAME:=smartdns
 PKG_VERSION:=__PKG_VERSION__
 PKG_RELEASE:=3
@@ -226,9 +226,46 @@ define Package/smartdns-ui/install
 	fi
 endef
 
-# === luci-app-smartdns ===
+
+
+# Build/Prepare: local clone with proto=none, copy source from CURDIR
+# (instead of PKG_SOURCE_PROTO:=git with default git clone)
+define Build/Prepare
+	mkdir -p $(PKG_BUILD_DIR)
+	cp -rf $(CURDIR)/. $(PKG_BUILD_DIR)/
+endef
+
+# Build/Compile: smartdns C code + copy pre-built .so/wwwroot
+define Build/Compile
+	$(call Build/Compile/Default,smartdns)
+	if [ -f "$(PKG_BUILD_DIR)/smartdns-ui-data/usr/lib/smartdns_ui.so" ]; then \
+		mkdir -p $(PKG_BUILD_DIR)/usr/lib $(PKG_BUILD_DIR)/usr/share/smartdns; \
+		cp -f $(PKG_BUILD_DIR)/smartdns-ui-data/usr/lib/smartdns_ui.so $(PKG_BUILD_DIR)/usr/lib/; \
+		cp -rf $(PKG_BUILD_DIR)/smartdns-ui-data/usr/share/smartdns/wwwroot $(PKG_BUILD_DIR)/usr/share/smartdns/; \
+	else \
+		echo "⚠️ smartdns-ui: pre-built data not found in smartdns-ui-data/"; \
+	fi
+endef
+
+$(eval $(call BuildPackage,smartdns))
+$(eval $(call BuildPackage,smartdns-ui))
+
+PKG_MK_EOF
+sed -i "s/__PKG_VERSION__/${SM_VERSION}/" package/emortal/smartdns/Makefile package/emortal/luci-app-smartdns/Makefile
+echo "✅ smartdns: generated OpenWrt package Makefile"
+
+# === luci-app-smartdns (separate Makefile in emortal) ===
+mkdir -p package/emortal/luci-app-smartdns
+cat > package/emortal/luci-app-smartdns/Makefile << 'LUCI_MK_EOF'
+PKG_NAME:=luci-app-smartdns
+PKG_VERSION:=__PKG_VERSION__
+PKG_RELEASE:=3
+
+PKG_SOURCE_PROTO:=none
+
+include $(INCLUDE_DIR)/package.mk
+
 define Package/luci-app-smartdns
-  $(Package/smartdns/default)
   SECTION:=luci
   CATEGORY:=LuCI
   SUBMENU:=3. Applications
@@ -258,36 +295,20 @@ define Package/luci-app-smartdns/install
 	$(INSTALL_BIN) $(PKG_BUILD_DIR)/package/luci-compat/files/etc/uci-defaults/50_luci-smartdns $(1)/etc/uci-defaults/50_luci-smartdns
 endef
 
-# Build/Prepare: local clone with proto=none, copy source from CURDIR
-# (instead of PKG_SOURCE_PROTO:=git with default git clone)
 define Build/Prepare
-	mkdir -p $(PKG_BUILD_DIR)
-	cp -rf $(CURDIR)/. $(PKG_BUILD_DIR)/
+	mkdir -p $(PKG_BUILD_DIR)/package
+	cp -rf $(CURDIR)/../smartdns/package/luci-compat $(PKG_BUILD_DIR)/package/
 endef
 
-# Build/Compile: smartdns C code + copy pre-built .so/wwwroot
-define Build/Compile
-	$(call Build/Compile/Default,smartdns)
-	if [ -f "$(PKG_BUILD_DIR)/smartdns-ui-data/usr/lib/smartdns_ui.so" ]; then \
-		mkdir -p $(PKG_BUILD_DIR)/usr/lib $(PKG_BUILD_DIR)/usr/share/smartdns; \
-		cp -f $(PKG_BUILD_DIR)/smartdns-ui-data/usr/lib/smartdns_ui.so $(PKG_BUILD_DIR)/usr/lib/; \
-		cp -rf $(PKG_BUILD_DIR)/smartdns-ui-data/usr/share/smartdns/wwwroot $(PKG_BUILD_DIR)/usr/share/smartdns/; \
-	else \
-		echo "⚠️ smartdns-ui: pre-built data not found in smartdns-ui-data/"; \
-	fi
-endef
-
-$(eval $(call BuildPackage,smartdns))
-$(eval $(call BuildPackage,smartdns-ui))
 $(eval $(call BuildPackage,luci-app-smartdns))
-PKG_MK_EOF
-sed -i "s/__PKG_VERSION__/${SM_VERSION}/" package/network/services/smartdns/Makefile
-echo "✅ smartdns: generated OpenWrt package Makefile"
+LUCI_MK_EOF
+sed -i "s/__PKG_VERSION__/${SM_VERSION}/" package/emortal/luci-app-smartdns/Makefile
+echo "✅ luci-app-smartdns: generated separate OpenWrt package Makefile"
 
 # 4b. Download pre-built smartdns_with_ui ipk (libsmartdns_ui.so + wwwroot)
 #     版本自动匹配检测到的 release，API 不可用时用固定版本
 if [ -n "$SM_VERSION" ]; then
-  _sm_ui_dir="$(pwd)/package/network/services/smartdns/smartdns-ui-data"
+  _sm_ui_dir="$(pwd)/package/emortal/smartdns/smartdns-ui-data"
   SM_UI_FILE="smartdns_with_ui.${SM_VERSION}.x86_64.ipk"
   SM_UI_URL="https://github.com/PikuZheng/smartdns/releases/download/${SM_VERSION}_with_ui/${SM_UI_FILE}"
   SM_UI_RETRY=0
@@ -331,7 +352,7 @@ if [ -n "$SM_VERSION" ]; then
     echo "⚠️ smartdns-ui: all retries exhausted, building without Web UI"
   fi
 fi
-rm -f package/network/services/smartdns/smartdns-ui-data/smartdns_with_ui*.ipk 2>/dev/null
+rm -f package/emortal/smartdns/smartdns-ui-data/smartdns_with_ui*.ipk 2>/dev/null
 echo "✅ smartdns: ready"
 
 
