@@ -168,9 +168,16 @@ make defconfig || { echo "❌ defconfig (post diy) failed"; exit 1; }
 # make defconfig updates .config mtime, which makes all existing .built stamps
 # appear stale. The solution: touch existing .built to match .config so make only
 # compiles genuinely new packages (like smartdns) that have no .built yet.
-find build_dir/target-*/ -name .built -exec touch -r .config {} \; 2>/dev/null || true
-find build_dir/hostpkg/ -name .built -exec touch -r .config {} \; 2>/dev/null || true
-find staging_dir/target-*/stamp/ -name ".*_installed" ! -name "*.smartdns*" ! -name "*.luci-app-smartdns*" -exec touch -r .config {} \; 2>/dev/null || true
+# Docker overlay2 filesystem rounds down sub-second timestamps, so
+# `touch -r .config` makes .built ~1s OLDER than .config → full rebuild.
+# Fix: set timestamps to .config epoch + 2 seconds to ensure .built > .config.
+CONFIG_TS=$(stat -c%Y .config)
+NEW_TS=$((CONFIG_TS + 2))
+find build_dir/target-*/ -name .built -exec touch -d @$NEW_TS {} \; 2>/dev/null || true
+find build_dir/hostpkg/ -name .built -exec touch -d @$NEW_TS {} \; 2>/dev/null || true
+find staging_dir/target-*/stamp/ -name ".*_installed" ! -name "*.smartdns*" ! -name "*.luci-app-smartdns*" -exec touch -d @$NEW_TS {} \; 2>/dev/null || true
+find staging_dir/hostpkg/stamp/ -name ".*_installed" ! -name "*.smartdns*" ! -name "*.luci-app-smartdns*" -exec touch -d @$NEW_TS {} \; 2>/dev/null || true
+unset CONFIG_TS NEW_TS
 
 # ============================================================
 # Section 6: Package Fixes
