@@ -121,8 +121,59 @@ if [ -z "$SM_VERSION" ]; then
   SM_VERSION="$SM_UI_VER_FALLBACK"
 fi
 
+# 4a. Download pre-built smartdns_with_ui ipk (libsmartdns_ui.so + wwwroot)
+#     版本自动匹配检测到的 release，API 不可用时用固定版本
+#     ⚠️ 必须在版本 sanitization 之前构建 URL！因为 release tag 保留 v 前缀
+if [ -n "$SM_VERSION" ]; then
+  _sm_ui_dir="$(pwd)/package/emortal/smartdns/smartdns-ui-data"
+  SM_UI_FILE="smartdns_with_ui.${SM_VERSION}.x86_64.ipk"
+  SM_UI_URL="https://github.com/PikuZheng/smartdns/releases/download/${SM_VERSION}_with_ui/${SM_UI_FILE}"
+  SM_UI_RETRY=0
+  until [ $SM_UI_RETRY -ge 3 ]; do
+    rm -rf "$_sm_ui_dir"
+    mkdir -p "$_sm_ui_dir"
+    cd "$_sm_ui_dir"
+    if curl -sL --connect-timeout 10 "$SM_UI_URL" -o "$SM_UI_FILE" 2>/dev/null; then
+      SM_UI_SIZE=$(stat -c%s "$SM_UI_FILE" 2>/dev/null || echo 0)
+      if [ "$SM_UI_SIZE" -gt 100000 ]; then
+        # Extract ipk (ar archive: control.tar.gz + data.tar.gz + debian-binary)
+        ar x "$SM_UI_FILE" 2>/dev/null && \
+        if [ -f data.tar.gz ]; then
+          tar xzf data.tar.gz 2>/dev/null && echo "✅ smartdns-ui: data.tar.gz extracted"
+        elif [ -f data.tar.xz ]; then
+          tar xJf data.tar.xz 2>/dev/null && echo "✅ smartdns-ui: data.tar.xz extracted"
+        else
+          echo "⚠️ smartdns-ui: no data.tar.* in ipk"
+        fi
+        rm -f "$SM_UI_FILE" control.tar.gz debian-binary 2>/dev/null
+        cd "$_sm_root"
+        _sm_so_found=$(find "$_sm_ui_dir" -name "smartdns_ui.so" 2>/dev/null | head -1)
+        if [ -n "$_sm_so_found" ]; then
+          echo "✅ smartdns-ui: libsmartdns_ui.so found in ipk"
+          break
+        else
+          echo "⚠️ smartdns-ui: .so not found in extracted ipk"
+        fi
+      else
+        echo "⚠️ smartdns-ui: download too small ($SM_UI_SIZE bytes), retrying..."
+        rm -f "$SM_UI_FILE"
+      fi
+    else
+      echo "⚠️ smartdns-ui: download failed (attempt $((SM_UI_RETRY+1)))"
+    fi
+    cd "$_sm_root"
+    SM_UI_RETRY=$((SM_UI_RETRY+1))
+    sleep 2
+  done
+  if [ "$SM_UI_RETRY" -ge 3 ]; then
+    echo "⚠️ smartdns-ui: all retries exhausted, building without Web UI"
+  fi
+fi
+rm -f package/emortal/smartdns/smartdns-ui-data/smartdns_with_ui*.ipk 2>/dev/null
+
 # Sanitize version: apk mkpkg rejects 'v' prefix in version components (e.g. 1.2026.v48.2.1)
 # Remove 'v' when preceded by a dot and followed by digit(s): .v48 → .48
+# ⚠️ 必须在 UI DOWNLOAD 之后才 sanitize（URL 中的 release tag 保留 v 前缀）
 SM_VERSION="$(echo "$SM_VERSION" | sed 's/\.v\([0-9]\)/.\1/g')"
 
 # Clone + retry
@@ -318,54 +369,6 @@ LUCI_MK_EOF
 sed -i "s/__PKG_VERSION__/${SM_VERSION}/" package/emortal/luci-app-smartdns/Makefile
 echo "✅ luci-app-smartdns: generated separate OpenWrt package Makefile"
 
-# 4b. Download pre-built smartdns_with_ui ipk (libsmartdns_ui.so + wwwroot)
-#     版本自动匹配检测到的 release，API 不可用时用固定版本
-if [ -n "$SM_VERSION" ]; then
-  _sm_ui_dir="$(pwd)/package/emortal/smartdns/smartdns-ui-data"
-  SM_UI_FILE="smartdns_with_ui.${SM_VERSION}.x86_64.ipk"
-  SM_UI_URL="https://github.com/PikuZheng/smartdns/releases/download/${SM_VERSION}_with_ui/${SM_UI_FILE}"
-  SM_UI_RETRY=0
-  until [ $SM_UI_RETRY -ge 3 ]; do
-    rm -rf "$_sm_ui_dir"
-    mkdir -p "$_sm_ui_dir"
-    cd "$_sm_ui_dir"
-    if curl -sL --connect-timeout 10 "$SM_UI_URL" -o "$SM_UI_FILE" 2>/dev/null; then
-      SM_UI_SIZE=$(stat -c%s "$SM_UI_FILE" 2>/dev/null || echo 0)
-      if [ "$SM_UI_SIZE" -gt 100000 ]; then
-        # Extract ipk (ar archive: control.tar.gz + data.tar.gz + debian-binary)
-        ar x "$SM_UI_FILE" 2>/dev/null && \
-        if [ -f data.tar.gz ]; then
-          tar xzf data.tar.gz 2>/dev/null && echo "✅ smartdns-ui: data.tar.gz extracted"
-        elif [ -f data.tar.xz ]; then
-          tar xJf data.tar.xz 2>/dev/null && echo "✅ smartdns-ui: data.tar.xz extracted"
-        else
-          echo "⚠️ smartdns-ui: no data.tar.* in ipk"
-        fi
-        rm -f "$SM_UI_FILE" control.tar.gz debian-binary 2>/dev/null
-        cd "$_sm_root"
-        _sm_so_found=$(find "$_sm_ui_dir" -name "smartdns_ui.so" 2>/dev/null | head -1)
-        if [ -n "$_sm_so_found" ]; then
-          echo "✅ smartdns-ui: libsmartdns_ui.so found in ipk"
-          break
-        else
-          echo "⚠️ smartdns-ui: .so not found in extracted ipk"
-        fi
-      else
-        echo "⚠️ smartdns-ui: download too small ($SM_UI_SIZE bytes), retrying..."
-        rm -f "$SM_UI_FILE"
-      fi
-    else
-      echo "⚠️ smartdns-ui: download failed (attempt $((SM_UI_RETRY+1)))"
-    fi
-    cd "$_sm_root"
-    SM_UI_RETRY=$((SM_UI_RETRY+1))
-    sleep 2
-  done
-  if [ "$SM_UI_RETRY" -ge 3 ]; then
-    echo "⚠️ smartdns-ui: all retries exhausted, building without Web UI"
-  fi
-fi
-rm -f package/emortal/smartdns/smartdns-ui-data/smartdns_with_ui*.ipk 2>/dev/null
 echo "✅ smartdns: ready"
 
 
