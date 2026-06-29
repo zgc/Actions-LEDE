@@ -168,7 +168,7 @@ make defconfig || { echo "❌ defconfig (post diy) failed"; exit 1; }
 # make defconfig updates .config mtime, which makes all existing .built stamps
 # appear stale. The solution: touch existing .built to match .config so make only
 # compiles genuinely new packages (like smartdns) that have no .built yet.
-find build_dir/target-*/.built -exec touch -r .config {} \; 2>/dev/null || true
+find build_dir/target-*/ -name .built -exec touch -r .config {} \; 2>/dev/null || true
 
 # ============================================================
 # Section 6: Package Fixes
