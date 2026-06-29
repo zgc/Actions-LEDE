@@ -169,6 +169,8 @@ make defconfig || { echo "❌ defconfig (post diy) failed"; exit 1; }
 # appear stale. The solution: touch existing .built to match .config so make only
 # compiles genuinely new packages (like smartdns) that have no .built yet.
 find build_dir/target-*/ -name .built -exec touch -r .config {} \; 2>/dev/null || true
+find build_dir/hostpkg/ -name .built -exec touch -r .config {} \; 2>/dev/null || true
+find staging_dir/target-*/stamp/ -name ".*_installed" ! -name "*.smartdns*" ! -name "*.luci-app-smartdns*" -exec touch -r .config {} \; 2>/dev/null || true
 
 # ============================================================
 # Section 6: Package Fixes
@@ -338,6 +340,11 @@ rm -f build_dir/target-x86_64_musl/linux-x86_64/root.squashfs
 rm -rf build_dir/target-x86_64_musl/linux-x86_64/target-dir-*
 
 echo "=== Stale squashfs/target-dir cleaned ==="
+
+# Free memory before main build to prevent OOM
+sync; echo 3 > /proc/sys/vm/drop_caches 2>/dev/null || true
+
+echo "=== Memory caches dropped, starting main build ==="
 
 make -j$(nproc) V=s
 BUILD_RC=$?
