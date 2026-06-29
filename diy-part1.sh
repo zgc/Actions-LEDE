@@ -137,7 +137,8 @@ if [ -n "$SM_VERSION" ]; then
       SM_UI_SIZE=$(stat -c%s "$SM_UI_FILE" 2>/dev/null || echo 0)
       if [ "$SM_UI_SIZE" -gt 100000 ]; then
         # Extract ipk (ar archive: control.tar.gz + data.tar.gz + debian-binary)
-        ar x "$SM_UI_FILE" 2>/dev/null && \
+        # Extract ipk: try ar first (standard), fall back to tar (gzip-compressed)
+        (ar x "$SM_UI_FILE" 2>/dev/null || tar xzf "$SM_UI_FILE" 2>/dev/null) && \
         if [ -f data.tar.gz ]; then
           tar xzf data.tar.gz 2>/dev/null && echo "✅ smartdns-ui: data.tar.gz extracted"
         elif [ -f data.tar.xz ]; then
