@@ -160,6 +160,7 @@ PKG_LICENSE_FILES:=LICENSE
 PKG_BUILD_PARALLEL:=1
 
 include $(TOPDIR)/rules.mk
+include $(INCLUDE_DIR)/package.mk
 
 MAKE_VARS += VER=$(PKG_VERSION)
 MAKE_PATH:=src
@@ -265,6 +266,7 @@ PKG_RELEASE:=3
 PKG_SOURCE_PROTO:=none
 
 include $(TOPDIR)/rules.mk
+include $(INCLUDE_DIR)/package.mk
 
 define Package/luci-app-smartdns
   SECTION:=luci
