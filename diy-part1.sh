@@ -124,19 +124,25 @@ fi
 # 4a. Download pre-built smartdns_with_ui ipk (libsmartdns_ui.so + wwwroot)
 #     版本自动匹配检测到的 release，API 不可用时用固定版本
 #     ⚠️ 必须在版本 sanitization 之前构建 URL！因为 release tag 保留 v 前缀
+# _sm_root = CWD (= openwrt/) at this point; used to cd back after UI download
+_sm_root="$(pwd)"
+
+# 4a. Download pre-built smartdns_with_ui ipk to /tmp (outside clone dir)
+#     (clone retry loop below does rm -rf package/emortal/smartdns, so we must
+#      extract UI data outside it)
+_sm_ui_tmp="/tmp/smartdns-ui-$$"
+rm -rf "$_sm_ui_tmp"
 if [ -n "$SM_VERSION" ]; then
-  _sm_ui_dir="$(pwd)/package/emortal/smartdns/smartdns-ui-data"
   SM_UI_FILE="smartdns_with_ui.${SM_VERSION}.x86_64.ipk"
   SM_UI_URL="https://github.com/PikuZheng/smartdns/releases/download/${SM_VERSION}_with_ui/${SM_UI_FILE}"
   SM_UI_RETRY=0
   until [ $SM_UI_RETRY -ge 3 ]; do
-    rm -rf "$_sm_ui_dir"
-    mkdir -p "$_sm_ui_dir"
-    cd "$_sm_ui_dir"
+    rm -rf "$_sm_ui_tmp"
+    mkdir -p "$_sm_ui_tmp"
+    cd "$_sm_ui_tmp"
     if curl -sL --connect-timeout 10 "$SM_UI_URL" -o "$SM_UI_FILE" 2>/dev/null; then
       SM_UI_SIZE=$(stat -c%s "$SM_UI_FILE" 2>/dev/null || echo 0)
       if [ "$SM_UI_SIZE" -gt 100000 ]; then
-        # Extract ipk (ar archive: control.tar.gz + data.tar.gz + debian-binary)
         # Extract ipk: try ar first (standard), fall back to tar (gzip-compressed)
         (ar x "$SM_UI_FILE" 2>/dev/null || tar xzf "$SM_UI_FILE" 2>/dev/null) && \
         if [ -f data.tar.gz ]; then
@@ -148,8 +154,7 @@ if [ -n "$SM_VERSION" ]; then
         fi
         rm -f "$SM_UI_FILE" control.tar.gz debian-binary 2>/dev/null
         cd "$_sm_root"
-        _sm_so_found=$(find "$_sm_ui_dir" -name "smartdns_ui.so" 2>/dev/null | head -1)
-        if [ -n "$_sm_so_found" ]; then
+        if [ -f "$_sm_ui_tmp/usr/lib/smartdns_ui.so" ]; then
           echo "✅ smartdns-ui: libsmartdns_ui.so found in ipk"
           break
         else
@@ -170,14 +175,13 @@ if [ -n "$SM_VERSION" ]; then
     echo "⚠️ smartdns-ui: all retries exhausted, building without Web UI"
   fi
 fi
-rm -f package/emortal/smartdns/smartdns-ui-data/smartdns_with_ui*.ipk 2>/dev/null
 
 # Sanitize version: apk mkpkg rejects 'v' prefix in version components (e.g. 1.2026.v48.2.1)
 # Remove 'v' when preceded by a dot and followed by digit(s): .v48 → .48
 # ⚠️ 必须在 UI DOWNLOAD 之后才 sanitize（URL 中的 release tag 保留 v 前缀）
 SM_VERSION="$(echo "$SM_VERSION" | sed 's/\.v\([0-9]\)/.\1/g')"
 
-# Clone + retry
+# 4b. Clone PikuZheng/smartdns source (with retry)
 sm_ok=false
 for attempt in 1 2 3 4 5; do
   rm -rf package/emortal/smartdns
@@ -187,7 +191,13 @@ for attempt in 1 2 3 4 5; do
     if [ -f package/emortal/smartdns/Makefile ]; then
       sm_ok=true
       echo "✅ smartdns: cloned from GitHub ($SM_TAG)"
-  rm -f package/emortal/smartdns/package/openwrt/Makefile
+      rm -f package/emortal/smartdns/package/openwrt/Makefile
+      # Restore UI data from /tmp to package/emortal/smartdns/smartdns-ui-data
+      if [ -d "$_sm_ui_tmp" ] && [ -f "$_sm_ui_tmp/usr/lib/smartdns_ui.so" ]; then
+        mkdir -p package/emortal/smartdns/smartdns-ui-data
+        cp -r "$_sm_ui_tmp/usr" package/emortal/smartdns/smartdns-ui-data/
+        echo "✅ smartdns-ui: lib restored from /tmp"
+      fi
       break
     fi
   fi
@@ -201,7 +211,6 @@ fi
 
 # Generate OpenWrt package Makefile (once, after successful clone)
 # Overwrites upstream C-project Makefile with OpenWrt package definition
-_sm_root="${GITHUB_WORKSPACE:-$(dirname "$0")}"
 cat > package/emortal/smartdns/Makefile << 'PKG_MK_EOF'
 PKG_NAME:=smartdns
 PKG_VERSION:=__PKG_VERSION__
