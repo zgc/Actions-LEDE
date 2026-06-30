@@ -147,8 +147,16 @@ fi
 ./scripts/feeds update -f -a
 ./scripts/feeds install -a
 
-# Remove feeds smartdns symlinks that conflict with custom (emortal) versions
-rm -f package/feeds/luci/luci-app-smartdns
+# Remove feeds symlinks that conflict with custom (emortal) packages
+# Ensures custom versions under package/emortal/ always win cleanly
+for pkg_dir in package/emortal/*/; do
+  pkg_name="$(basename "$pkg_dir")"
+  # Only target symlinks (feeds install artifacts)
+  find package/feeds -maxdepth 3 -type l -name "$pkg_name" 2>/dev/null | while read -r link; do
+    rm -f "$link"
+    echo "✅ Removed conflicting feeds symlink: $link"
+  done
+done
 
 # ============================================================
 # Section 5: Config
