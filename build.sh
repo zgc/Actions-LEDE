@@ -147,6 +147,9 @@ fi
 ./scripts/feeds update -f -a
 ./scripts/feeds install -a
 
+# Remove feeds smartdns symlinks that conflict with custom (emortal) versions
+rm -f package/feeds/luci/luci-app-smartdns
+
 # ============================================================
 # Section 5: Config
 # ============================================================
