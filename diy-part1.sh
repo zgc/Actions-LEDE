@@ -86,12 +86,12 @@ cache_clone "luci-app-openclash" \
   "luci-app-openclash"
 
 
+
 # 4. PikuZheng/smartdns（增强 fork，额外 bugfix + Web UI）
-# 自动检测最新 release 版本，确保 C 源码与 .so 版本同步
-# ============================================================
-SM_TAG="master"          # git tag/branch to clone
-SM_VERSION=""             # version string for .so download
-SM_UI_VER_FALLBACK="1.2026.v48.1.13"  # pinned fallback if API unavailable
+#    自动检测最新 release 版本，确保 C 源码与 .so 版本同步
+SM_TAG="master"
+SM_VERSION=""
+SM_UI_VER_FALLBACK="1.2026.v48.1.13"
 
 echo "=== Checking latest PikuZheng/smartdns release ==="
 for i in 1 2 3; do
@@ -122,14 +122,8 @@ if [ -z "$SM_VERSION" ]; then
 fi
 
 # 4a. Download pre-built smartdns_with_ui ipk (libsmartdns_ui.so + wwwroot)
-#     版本自动匹配检测到的 release，API 不可用时用固定版本
 #     ⚠️ 必须在版本 sanitization 之前构建 URL！因为 release tag 保留 v 前缀
-# _sm_root = CWD (= openwrt/) at this point; used to cd back after UI download
 _sm_root="$(pwd)"
-
-# 4a. Download pre-built smartdns_with_ui ipk to /tmp (outside clone dir)
-#     (clone retry loop below does rm -rf package/emortal/smartdns, so we must
-#      extract UI data outside it)
 _sm_ui_tmp="/tmp/smartdns-ui-$$"
 rm -rf "$_sm_ui_tmp"
 if [ -n "$SM_VERSION" ]; then
@@ -143,7 +137,6 @@ if [ -n "$SM_VERSION" ]; then
     if curl -sL --connect-timeout 10 "$SM_UI_URL" -o "$SM_UI_FILE" 2>/dev/null; then
       SM_UI_SIZE=$(stat -c%s "$SM_UI_FILE" 2>/dev/null || echo 0)
       if [ "$SM_UI_SIZE" -gt 100000 ]; then
-        # Extract ipk: try ar first (standard), fall back to tar (gzip-compressed)
         (ar x "$SM_UI_FILE" 2>/dev/null || tar xzf "$SM_UI_FILE" 2>/dev/null) && \
         if [ -f data.tar.gz ]; then
           tar xzf data.tar.gz 2>/dev/null && echo "✅ smartdns-ui: data.tar.gz extracted"
@@ -176,9 +169,7 @@ if [ -n "$SM_VERSION" ]; then
   fi
 fi
 
-# Sanitize version: apk mkpkg rejects 'v' prefix in version components (e.g. 1.2026.v48.2.1)
-# Remove 'v' when preceded by a dot and followed by digit(s): .v48 → .48
-# ⚠️ 必须在 UI DOWNLOAD 之后才 sanitize（URL 中的 release tag 保留 v 前缀）
+# Sanitize version: apk mkpkg rejects 'v' prefix in version components (e.g. .v48)
 SM_VERSION="$(echo "$SM_VERSION" | sed 's/\.v\([0-9]\)/.\1/g')"
 
 # 4b. Clone PikuZheng/smartdns source (with retry)
@@ -192,7 +183,6 @@ for attempt in 1 2 3 4 5; do
       sm_ok=true
       echo "✅ smartdns: cloned from GitHub ($SM_TAG)"
       rm -f package/emortal/smartdns/package/openwrt/Makefile
-      # Restore UI data from /tmp to package/emortal/smartdns/smartdns-ui-data
       if [ -d "$_sm_ui_tmp" ] && [ -f "$_sm_ui_tmp/usr/lib/smartdns_ui.so" ]; then
         mkdir -p package/emortal/smartdns/smartdns-ui-data
         cp -r "$_sm_ui_tmp/usr" package/emortal/smartdns/smartdns-ui-data/
@@ -209,24 +199,18 @@ if [ "$sm_ok" != true ]; then
   exit 1
 fi
 
-# Generate OpenWrt package Makefile (once, after successful clone)
-# Overwrites upstream C-project Makefile with OpenWrt package definition
+# Generate smartdns + smartdns-ui OpenWrt package Makefile
 cat > package/emortal/smartdns/Makefile << 'PKG_MK_EOF'
 PKG_NAME:=smartdns
 PKG_VERSION:=__PKG_VERSION__
 PKG_RELEASE:=3
-
 PKG_SOURCE_PROTO:=none
-
 PKG_MAINTAINER:=Nick Peng <pymumu@gmail.com>
 PKG_LICENSE:=GPL-3.0-or-later
 PKG_LICENSE_FILES:=LICENSE
-
 PKG_BUILD_PARALLEL:=1
-
 include $(TOPDIR)/rules.mk
 include $(INCLUDE_DIR)/package.mk
-
 MAKE_VARS += VER=$(PKG_VERSION)
 MAKE_PATH:=src
 
@@ -293,16 +277,11 @@ define Package/smartdns-ui/install
 	fi
 endef
 
-
-
-# Build/Prepare: local clone with proto=none, copy source from CURDIR
-# (instead of PKG_SOURCE_PROTO:=git with default git clone)
 define Build/Prepare
 	mkdir -p $(PKG_BUILD_DIR)
 	cp -rf $(CURDIR)/. $(PKG_BUILD_DIR)/
 endef
 
-# Build/Compile: smartdns C code + copy pre-built .so/wwwroot
 define Build/Compile
 	$(call Build/Compile/Default,smartdns)
 	if [ -f "$(PKG_BUILD_DIR)/smartdns-ui-data/usr/lib/smartdns_ui.so" ]; then \
@@ -316,75 +295,11 @@ endef
 
 $(eval $(call BuildPackage,smartdns))
 $(eval $(call BuildPackage,smartdns-ui))
-
 PKG_MK_EOF
 sed -i "s/__PKG_VERSION__/${SM_VERSION}/" package/emortal/smartdns/Makefile
 echo "✅ smartdns: generated OpenWrt package Makefile"
 
-# === luci-app-smartdns (separate Makefile in emortal) ===
-mkdir -p package/emortal/luci-app-smartdns
-cat > package/emortal/luci-app-smartdns/Makefile << 'LUCI_MK_EOF'
-PKG_NAME:=luci-app-smartdns
-PKG_VERSION:=__PKG_VERSION__
-PKG_RELEASE:=3
-
-PKG_SOURCE_PROTO:=none
-
-include $(TOPDIR)/rules.mk
-include $(INCLUDE_DIR)/package.mk
-
-define Package/luci-app-smartdns
-  SECTION:=luci
-  CATEGORY:=LuCI
-  SUBMENU:=3. Applications
-  TITLE:=LuCI support for smartdns (PikuZheng fork)
-  DEPENDS:=+luci-compat +luci-lua-runtime +smartdns
-  PKGARCH:=all
-endef
-
-define Package/luci-app-smartdns/description
-LuCI configuration pages for PikuZheng smartdns fork.
-endef
-
-define Package/luci-app-smartdns/install
-	$(INSTALL_DIR) $(1)/usr/lib/lua/luci/controller
-	$(INSTALL_DIR) $(1)/usr/lib/lua/luci/model/cbi/smartdns
-	$(INSTALL_DIR) $(1)/usr/lib/lua/luci/i18n
-	$(INSTALL_DIR) $(1)/usr/lib/lua/luci/view/smartdns
-	$(INSTALL_DIR) $(1)/usr/share/rpcd/acl.d
-	$(INSTALL_DIR) $(1)/etc/uci-defaults
-	$(INSTALL_DATA) $(PKG_BUILD_DIR)/package/luci-compat/files/luci/controller/smartdns.lua $(1)/usr/lib/lua/luci/controller/
-	$(INSTALL_DATA) $(PKG_BUILD_DIR)/package/luci-compat/files/luci/model/smartdns.lua $(1)/usr/lib/lua/luci/model/
-	$(INSTALL_DATA) $(PKG_BUILD_DIR)/package/luci-compat/files/luci/model/cbi/smartdns/smartdns.lua $(1)/usr/lib/lua/luci/model/cbi/smartdns/
-	$(INSTALL_DATA) $(PKG_BUILD_DIR)/package/luci-compat/files/luci/model/cbi/smartdns/upstream.lua $(1)/usr/lib/lua/luci/model/cbi/smartdns/
-	$(INSTALL_DATA) $(PKG_BUILD_DIR)/package/luci-compat/files/luci/view/smartdns/smartdns_status.htm $(1)/usr/lib/lua/luci/view/smartdns/
-	$(INSTALL_DATA) $(PKG_BUILD_DIR)/package/luci-compat/files/luci/i18n/smartdns.zh-cn.po $(1)/usr/lib/lua/luci/i18n/
-	$(INSTALL_DATA) $(PKG_BUILD_DIR)/package/luci-compat/files/usr/share/rpcd/acl.d/luci-app-smartdns.json $(1)/usr/share/rpcd/acl.d/
-	$(INSTALL_BIN) $(PKG_BUILD_DIR)/package/luci-compat/files/etc/uci-defaults/50_luci-smartdns $(1)/etc/uci-defaults/50_luci-smartdns
-	# JS interface (from package/luci/)
-	$(INSTALL_DIR) $(1)/usr/share/luci/menu.d
-	$(INSTALL_DIR) $(1)/www/luci-static/resources/view/smartdns
-	$(INSTALL_DATA) $(PKG_BUILD_DIR)/package/luci/files/root/usr/share/luci/menu.d/luci-app-smartdns.json $(1)/usr/share/luci/menu.d/
-	$(INSTALL_DATA) $(PKG_BUILD_DIR)/package/luci/files/root/www/luci-static/resources/view/smartdns/smartdns.js $(1)/www/luci-static/resources/view/smartdns/
-endef
-
-define Build/Prepare
-	mkdir -p $(PKG_BUILD_DIR)/package
-	cp -rf $(CURDIR)/../smartdns/package/luci-compat $(PKG_BUILD_DIR)/package/
-	cp -rf $(CURDIR)/../smartdns/package/luci $(PKG_BUILD_DIR)/package/
-endef
-
-define Build/Compile
-endef
-
-define Build/InstallDev
-endef
-
-$(eval $(call BuildPackage,luci-app-smartdns))
-LUCI_MK_EOF
-sed -i "s/__PKG_VERSION__/${SM_VERSION}/" package/emortal/luci-app-smartdns/Makefile
-echo "✅ luci-app-smartdns: generated separate OpenWrt package Makefile"
-
+# luci-app-smartdns 使用 ImmortalWrt feed 版本，此处不重复生成
 echo "✅ smartdns: ready"
 
 
@@ -392,7 +307,7 @@ echo "✅ smartdns: ready"
 #    Upstream now has e3b0c44... (empty hash), fix to actual tarball hash
 sed -i 's|PKG_HASH:=e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855|PKG_HASH:=2c607f573c6e38815433af289d364a689a203b18b51125f06c4472014d0657f0|' feeds/packages/net/zerotier/Makefile
 
-# 5. OpenClash Ruby 4.0 + Psych YAML 兼容性修复
+# 6. OpenClash Ruby 4.0 + Psych YAML 兼容性修复
 #    ImmortalWrt Ruby 4.0 的 Psych YAML 库需要显式 require stringio
 #    否则 OpenClash 所有 Ruby YAML 解析脚本崩溃:
 #    Load File Failed,【uninitialized constant Psych::StringIO】
