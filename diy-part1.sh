@@ -361,11 +361,17 @@ define Package/luci-app-smartdns/install
 	$(INSTALL_DATA) $(PKG_BUILD_DIR)/package/luci-compat/files/luci/i18n/smartdns.zh-cn.po $(1)/usr/lib/lua/luci/i18n/
 	$(INSTALL_DATA) $(PKG_BUILD_DIR)/package/luci-compat/files/usr/share/rpcd/acl.d/luci-app-smartdns.json $(1)/usr/share/rpcd/acl.d/
 	$(INSTALL_BIN) $(PKG_BUILD_DIR)/package/luci-compat/files/etc/uci-defaults/50_luci-smartdns $(1)/etc/uci-defaults/50_luci-smartdns
+	# JS interface (from package/luci/)
+	$(INSTALL_DIR) $(1)/usr/share/luci/menu.d
+	$(INSTALL_DIR) $(1)/www/luci-static/resources/view/smartdns
+	$(INSTALL_DATA) $(PKG_BUILD_DIR)/package/luci/files/root/usr/share/luci/menu.d/luci-app-smartdns.json $(1)/usr/share/luci/menu.d/
+	$(INSTALL_DATA) $(PKG_BUILD_DIR)/package/luci/files/root/www/luci-static/resources/view/smartdns/smartdns.js $(1)/www/luci-static/resources/view/smartdns/
 endef
 
 define Build/Prepare
 	mkdir -p $(PKG_BUILD_DIR)/package
 	cp -rf $(CURDIR)/../smartdns/package/luci-compat $(PKG_BUILD_DIR)/package/
+	cp -rf $(CURDIR)/../smartdns/package/luci $(PKG_BUILD_DIR)/package/
 endef
 
 define Build/Compile
