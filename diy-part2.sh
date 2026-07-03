@@ -35,8 +35,7 @@ git clone --depth 1 -b $LUCI_BRANCH https://github.com/jerrykuku/luci-theme-argo
 sed -i "s/\$(TOPDIR)\/luci.mk/\$(TOPDIR)\/feeds\/luci\/luci.mk/g" feeds/luci/themes/luci-theme-argon/Makefile
 
 
-# SmartDNS: PikuZheng fork — remove feeds version (Makefile generated in diy-part1.sh)
-rm -rf feeds/packages/net/smartdns
+
 for script in check_smartdns_connect.sh check_openclash_connect.sh check_wan_connect.sh \
               reset_get_img.sh reset_latest.sh reset_offline.sh reset_upload.sh; do
   cp "$GITHUB_WORKSPACE/scripts/$script" package/base-files/files/etc/
@@ -789,6 +788,8 @@ echo '
 
 config smartdns
 	option server_name 'smartdns'
+	option ui '1'
+	option ui_data_dir '/etc/smartdns/ui'
 	option port '6053'
 	option ipv6_server '0'
 	option dualstack_ip_selection '0'
