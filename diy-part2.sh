@@ -24,11 +24,11 @@ CLASH_META_REPOS_VERNESONG=${CLASH_META_REPOS_VERNESONG:-true}
 # Remove DirectInterface restriction AND deduplicate option enable
 # (source file has 2x option enable '1'; keep only the first)
 sed -i \
-  -e '/option _direct/d' \
-  -e '/option DirectInterface/d' \
-  -e '0,/^[[:space:]]*option enable '\''1'\''$/b' \
-  -e '/^[[:space:]]*option enable '\''1'\''$/d' \
-  package/network/services/dropbear/files/dropbear.config
+	-e '/option _direct/d' \
+	-e '/option DirectInterface/d' \
+	-e '0,/^[[:space:]]*option enable '\''1'\''$/b' \
+	-e '/^[[:space:]]*option enable '\''1'\''$/d' \
+	package/network/services/dropbear/files/dropbear.config
 
 rm -rf feeds/luci/themes/luci-theme-argon
 git clone --depth 1 -b $LUCI_BRANCH https://github.com/jerrykuku/luci-theme-argon.git feeds/luci/themes/luci-theme-argon
@@ -37,13 +37,13 @@ sed -i "s/\$(TOPDIR)\/luci.mk/\$(TOPDIR)\/feeds\/luci\/luci.mk/g" feeds/luci/the
 
 
 for script in check_smartdns_connect.sh check_openclash_connect.sh check_wan_connect.sh \
-              reset_get_img.sh reset_latest.sh reset_offline.sh reset_upload.sh; do
-  cp "$GITHUB_WORKSPACE/scripts/$script" package/base-files/files/etc/
-  chmod +x "package/base-files/files/etc/$script"
+							reset_get_img.sh reset_latest.sh reset_offline.sh reset_upload.sh; do
+	cp "$GITHUB_WORKSPACE/scripts/$script" package/base-files/files/etc/
+	chmod +x "package/base-files/files/etc/$script"
 done
 
 for cron_script in check_smartdns_connect.sh check_openclash_connect.sh check_wan_connect.sh; do
-  sed -i '/exit 0/i\if ! grep -q "/etc/'"$cron_script"'" /etc/crontabs/root 2>/dev/null; then echo "#*/5 * * * * /etc/'"$cron_script"'" >> /etc/crontabs/root; fi' package/emortal/default-settings/files/99-default-settings
+	sed -i '/exit 0/i\if ! grep -q "/etc/'"$cron_script"'" /etc/crontabs/root 2>/dev/null; then echo "#*/5 * * * * /etc/'"$cron_script"'" >> /etc/crontabs/root; fi' package/emortal/default-settings/files/99-default-settings
 done
 
 sed -i '/commit luci/i\set luci.main.mediaurlbase="/luci-static/argon"' package/emortal/default-settings/files/99-default-settings
@@ -773,13 +773,13 @@ config rule_providers
 ' >package/emortal/luci-app-openclash/root/etc/config/openclash
 mkdir -p package/emortal/luci-app-openclash/root/etc/openclash/core
 if ${CLASH_META_REPOS_VERNESONG}; then
-  curl --retry 5 -L https://github.com/vernesong/OpenClash/raw/core/dev/smart/clash-linux-${CPU_MODEL}.tar.gz | tar zxf -
-  mv clash package/emortal/luci-app-openclash/root/etc/openclash/core/clash_meta
+	curl --retry 5 -L https://github.com/vernesong/OpenClash/raw/core/dev/smart/clash-linux-${CPU_MODEL}.tar.gz | tar zxf -
+	mv clash package/emortal/luci-app-openclash/root/etc/openclash/core/clash_meta
 else
-  CLASH_META_VERSION="$(curl --retry 5 -L https://api.github.com/repos/MetaCubeX/mihomo/releases/latest 2>/dev/null|grep -E 'tag_name' |grep -E 'v[0-9.]+' -o 2>/dev/null)"
-  curl --retry 5 -L https://github.com/MetaCubeX/mihomo/releases/download/${CLASH_META_VERSION}/mihomo-linux-amd64-${CLASH_META_VERSION}.gz -O
-  gzip -d mihomo-linux-amd64-${CLASH_META_VERSION}.gz
-  mv mihomo-linux-amd64-${CLASH_META_VERSION} package/emortal/luci-app-openclash/root/etc/openclash/core/clash_meta
+	CLASH_META_VERSION="$(curl --retry 5 -L https://api.github.com/repos/MetaCubeX/mihomo/releases/latest 2>/dev/null|grep -E 'tag_name' |grep -E 'v[0-9.]+' -o 2>/dev/null)"
+	curl --retry 5 -L https://github.com/MetaCubeX/mihomo/releases/download/${CLASH_META_VERSION}/mihomo-linux-amd64-${CLASH_META_VERSION}.gz -O
+	gzip -d mihomo-linux-amd64-${CLASH_META_VERSION}.gz
+	mv mihomo-linux-amd64-${CLASH_META_VERSION} package/emortal/luci-app-openclash/root/etc/openclash/core/clash_meta
 fi
 chmod +x package/emortal/luci-app-openclash/root/etc/openclash/core/clash_meta
 curl --retry 5 -L https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download/geoip.dat -o package/emortal/luci-app-openclash/root/etc/openclash/GeoIP.dat
@@ -1047,87 +1047,87 @@ USE_PROCD=1
 START=99
 
 boot() {
-    sleep 5
-    apply_fix
+		sleep 5
+		apply_fix
 }
 
 start_service() {
-    apply_fix
+		apply_fix
 }
 
 apply_fix() {
-    # Find all r8152 interfaces and apply fix to each
-    local found=false
-    for dev in /sys/class/net/eth*; do
-        [ -e "$dev" ] || continue
-        local eth="${dev##*/}"
-        local driver
-        driver=$(readlink -f "$dev/device/driver" 2>/dev/null)
-        [ "${driver##*/}" = "r8152" ] || continue
-        found=true
+		# Find all r8152 interfaces and apply fix to each
+		local found=false
+		for dev in /sys/class/net/eth*; do
+				[ -e "$dev" ] || continue
+				local eth="${dev##*/}"
+				local driver
+				driver=$(readlink -f "$dev/device/driver" 2>/dev/null)
+				[ "${driver##*/}" = "r8152" ] || continue
+				found=true
 
-        # Fix 1: Disable TSO/GSO/GRO (super-frames exceed USB URB limits)
-        local tso_status
-        tso_status=$(/usr/sbin/ethtool -k "$eth" 2>/dev/null | grep "tcp-segmentation-offload:" | awk "{print \$2}")
-        if [ "$tso_status" = "off" ]; then
-            logger -t "r8152-fix" "TSO already off on $eth, no action needed"
-        else
-            /usr/sbin/ethtool -K "$eth" tso off gso off gro off 2>/dev/null && \
-                logger -t "r8152-fix" "TSO/GSO/GRO disabled on $eth (init.d)" || \
-                logger -t "r8152-fix" "ERROR: failed to disable offload on $eth"
-        fi
+				# Fix 1: Disable TSO/GSO/GRO (super-frames exceed USB URB limits)
+				local tso_status
+				tso_status=$(/usr/sbin/ethtool -k "$eth" 2>/dev/null | grep "tcp-segmentation-offload:" | awk "{print \$2}")
+				if [ "$tso_status" = "off" ]; then
+						logger -t "r8152-fix" "TSO already off on $eth, no action needed"
+				else
+						/usr/sbin/ethtool -K "$eth" tso off gso off gro off 2>/dev/null && \
+								logger -t "r8152-fix" "TSO/GSO/GRO disabled on $eth (init.d)" || \
+								logger -t "r8152-fix" "ERROR: failed to disable offload on $eth"
+				fi
 
-        ip link set "$eth" txqueuelen 5000 2>/dev/null
+				ip link set "$eth" txqueuelen 5000 2>/dev/null
 
-        # Fix 1b: Disable EEE (Energy-Efficient Ethernet) — known to cause RX deadlock on r8152 at 100M
-        /usr/sbin/ethtool --set-eee "$eth" eee off 2>/dev/null && \
-            logger -t "r8152-fix" "EEE disabled on $eth" || \
-            logger -t "r8152-fix" "NOTE: EEE not supported on $eth"
+				# Fix 1b: Disable EEE (Energy-Efficient Ethernet) — known to cause RX deadlock on r8152 at 100M
+				/usr/sbin/ethtool --set-eee "$eth" eee off 2>/dev/null && \
+						logger -t "r8152-fix" "EEE disabled on $eth" || \
+						logger -t "r8152-fix" "NOTE: EEE not supported on $eth"
 
-        # Fix 2: Disable USB device power management (prevents carrier flapping)
-        local usb_root
-        usb_root=$(readlink -f /sys/class/net/$eth/device 2>/dev/null)
-        usb_root=$(dirname "$usb_root" 2>/dev/null)
-        if [ -w "$usb_root/power/control" ]; then
-            echo "on" > "$usb_root/power/control" 2>/dev/null
-            echo "0" > "$usb_root/power/autosuspend_delay_ms" 2>/dev/null
-            logger -t "r8152-fix" "USB device power mgmt disabled on $eth"
-        else
-            logger -t "r8152-fix" "WARNING: cannot disable USB device power mgmt on $eth"
-        fi
-    done
+				# Fix 2: Disable USB device power management (prevents carrier flapping)
+				local usb_root
+				usb_root=$(readlink -f /sys/class/net/$eth/device 2>/dev/null)
+				usb_root=$(dirname "$usb_root" 2>/dev/null)
+				if [ -w "$usb_root/power/control" ]; then
+						echo "on" > "$usb_root/power/control" 2>/dev/null
+						echo "0" > "$usb_root/power/autosuspend_delay_ms" 2>/dev/null
+						logger -t "r8152-fix" "USB device power mgmt disabled on $eth"
+				else
+						logger -t "r8152-fix" "WARNING: cannot disable USB device power mgmt on $eth"
+				fi
+		done
 
-    $found || logger -t "r8152-fix" "WARNING: no r8152 interface found, skipping"
+		$found || logger -t "r8152-fix" "WARNING: no r8152 interface found, skipping"
 }
 
 fix_status() {
-    echo "=== r8152 Fix Status ==="
-    local found=false
-    for dev in /sys/class/net/eth*; do
-        [ -e "$dev" ] || continue
-        local eth="${dev##*/}"
-        local driver
-        driver=$(readlink -f "$dev/device/driver" 2>/dev/null)
-        [ "${driver##*/}" = "r8152" ] || continue
-        found=true
+		echo "=== r8152 Fix Status ==="
+		local found=false
+		for dev in /sys/class/net/eth*; do
+				[ -e "$dev" ] || continue
+				local eth="${dev##*/}"
+				local driver
+				driver=$(readlink -f "$dev/device/driver" 2>/dev/null)
+				[ "${driver##*/}" = "r8152" ] || continue
+				found=true
 
-        echo "--- Interface $eth ---"
-        /usr/sbin/ethtool -k "$eth" 2>/dev/null | grep -E "tcp-segmentation-offload:|generic-segmentation-offload:|generic-receive-offload:"
-        /usr/sbin/ethtool --show-eee "$eth" 2>/dev/null | grep "EEE status\|Tx LPI"
-        echo "txqueuelen: $(ip link show "$eth" | grep -o "qlen [0-9]*" | cut -d" " -f2)"
-        echo "Carrier changes: $(cat /sys/class/net/$eth/carrier_changes 2>/dev/null || echo 'N/A')"
-        local usb_root
-        usb_root=$(readlink -f /sys/class/net/$eth/device 2>/dev/null)
-        usb_root=$(dirname "$usb_root" 2>/dev/null)
-        if [ -r "$usb_root/power/control" ]; then
-            echo "USB device power control: $(cat "$usb_root/power/control" 2>/dev/null)"
-            echo "USB device autosuspend: $(cat "$usb_root/power/autosuspend_delay_ms" 2>/dev/null)ms"
-        fi
-    done
-    $found || echo "No r8152 interfaces found"
-    echo ""
-    echo "Last 10 log entries:"
-    logread | grep "r8152-fix" | tail -10
+				echo "--- Interface $eth ---"
+				/usr/sbin/ethtool -k "$eth" 2>/dev/null | grep -E "tcp-segmentation-offload:|generic-segmentation-offload:|generic-receive-offload:"
+				/usr/sbin/ethtool --show-eee "$eth" 2>/dev/null | grep "EEE status\|Tx LPI"
+				echo "txqueuelen: $(ip link show "$eth" | grep -o "qlen [0-9]*" | cut -d" " -f2)"
+				echo "Carrier changes: $(cat /sys/class/net/$eth/carrier_changes 2>/dev/null || echo 'N/A')"
+				local usb_root
+				usb_root=$(readlink -f /sys/class/net/$eth/device 2>/dev/null)
+				usb_root=$(dirname "$usb_root" 2>/dev/null)
+				if [ -r "$usb_root/power/control" ]; then
+						echo "USB device power control: $(cat "$usb_root/power/control" 2>/dev/null)"
+						echo "USB device autosuspend: $(cat "$usb_root/power/autosuspend_delay_ms" 2>/dev/null)ms"
+				fi
+		done
+		$found || echo "No r8152 interfaces found"
+		echo ""
+		echo "Last 10 log entries:"
+		logread | grep "r8152-fix" | tail -10
 }
 INITEOF
 chmod +x package/base-files/files/etc/init.d/r8152-fix
