@@ -1034,7 +1034,7 @@ echo "✅ rc.local: r8152 TSO/GSO/GRO/EEE + USB power mgmt"
 # ============================================================
 # r8152 USB NIC: Late-boot init script (START=99)
 # Runs after ALL init scripts (firewall, network) so offload stays off
-# Needed because rc.local runs too early — network/firewall restart later resets TSO/GSO
+# Dynamic iteration over all r8152 interfaces — works with any eth number
 # ============================================================
 mkdir -p package/base-files/files/etc/init.d
 cat > package/base-files/files/etc/init.d/r8152-fix <<'INITEOF'
@@ -1056,52 +1056,66 @@ start_service() {
 }
 
 apply_fix() {
-    local eth="eth2"
+    # Find all r8152 interfaces and apply fix to each
+    local found=false
+    for dev in /sys/class/net/eth*; do
+        [ -e "$dev" ] || continue
+        local eth="${dev##*/}"
+        local driver
+        driver=$(readlink -f "$dev/device/driver" 2>/dev/null)
+        [ "${driver##*/}" = "r8152" ] || continue
+        found=true
 
-    [ ! -d "/sys/class/net/$eth" ] && {
-        logger -t "r8152-fix" "WARNING: $eth does not exist, skipping"
-        return 1
-    }
+        # Fix 1: Disable TSO/GSO/GRO (super-frames exceed USB URB limits)
+        local tso_status
+        tso_status=$(/usr/sbin/ethtool -k "$eth" 2>/dev/null | grep "tcp-segmentation-offload:" | awk "{print \$2}")
+        if [ "$tso_status" = "off" ]; then
+            logger -t "r8152-fix" "TSO already off on $eth, no action needed"
+        else
+            /usr/sbin/ethtool -K "$eth" tso off gso off gro off 2>/dev/null && \
+                logger -t "r8152-fix" "TSO/GSO/GRO disabled on $eth (init.d)" || \
+                logger -t "r8152-fix" "ERROR: failed to disable offload on $eth"
+        fi
 
-    # Fix 1: Disable TSO/GSO/GRO (super-frames exceed USB URB limits)
-    local tso_status
-    tso_status=$(/usr/sbin/ethtool -k "$eth" 2>/dev/null | grep "tcp-segmentation-offload:" | awk "{print \$2}")
-    if [ "$tso_status" = "off" ]; then
-        logger -t "r8152-fix" "TSO already off, no action needed"
-    else
-        /usr/sbin/ethtool -K "$eth" tso off gso off gro off 2>/dev/null && \
-            logger -t "r8152-fix" "TSO/GSO/GRO disabled (init.d)" || \
-            logger -t "r8152-fix" "ERROR: failed to disable offload"
-    fi
+        ip link set "$eth" txqueuelen 5000 2>/dev/null
 
-    # Fix 1b: Disable EEE (Energy-Efficient Ethernet) — known to cause RX deadlock on r8152 at 100M
-    /usr/sbin/ethtool --set-eee "$eth" eee off 2>/dev/null && \
-        logger -t "r8152-fix" "EEE disabled" || \
-        logger -t "r8152-fix" "NOTE: EEE not supported"
+        # Fix 1b: Disable EEE (Energy-Efficient Ethernet) — known to cause RX deadlock on r8152 at 100M
+        /usr/sbin/ethtool --set-eee "$eth" eee off 2>/dev/null && \
+            logger -t "r8152-fix" "EEE disabled on $eth" || \
+            logger -t "r8152-fix" "NOTE: EEE not supported on $eth"
 
-    ip link set "$eth" txqueuelen 5000 2>/dev/null
+        # Fix 2: Disable USB device power management (prevents carrier flapping)
+        local usb_root
+        usb_root=$(readlink -f /sys/class/net/$eth/device 2>/dev/null)
+        usb_root=$(dirname "$usb_root" 2>/dev/null)
+        if [ -w "$usb_root/power/control" ]; then
+            echo "on" > "$usb_root/power/control" 2>/dev/null
+            echo "0" > "$usb_root/power/autosuspend_delay_ms" 2>/dev/null
+            logger -t "r8152-fix" "USB device power mgmt disabled on $eth"
+        else
+            logger -t "r8152-fix" "WARNING: cannot disable USB device power mgmt on $eth"
+        fi
+    done
 
-    # Fix 2: Disable USB device power management (prevents carrier flapping)
-    local usb_root
-    usb_root=$(readlink -f /sys/class/net/$eth/device 2>/dev/null)
-    usb_root=$(dirname "$usb_root" 2>/dev/null)
-    if [ -w "$usb_root/power/control" ]; then
-        echo "on" > "$usb_root/power/control" 2>/dev/null
-        echo "0" > "$usb_root/power/autosuspend_delay_ms" 2>/dev/null
-        logger -t "r8152-fix" "USB device power management disabled"
-    else
-        logger -t "r8152-fix" "WARNING: cannot disable USB device power mgmt"
-    fi
+    $found || logger -t "r8152-fix" "WARNING: no r8152 interface found, skipping"
 }
 
 fix_status() {
-    local eth="eth2"
     echo "=== r8152 Fix Status ==="
-    if [ -d "/sys/class/net/$eth" ]; then
-        echo "Interface: $eth"
+    local found=false
+    for dev in /sys/class/net/eth*; do
+        [ -e "$dev" ] || continue
+        local eth="${dev##*/}"
+        local driver
+        driver=$(readlink -f "$dev/device/driver" 2>/dev/null)
+        [ "${driver##*/}" = "r8152" ] || continue
+        found=true
+
+        echo "--- Interface $eth ---"
         /usr/sbin/ethtool -k "$eth" 2>/dev/null | grep -E "tcp-segmentation-offload:|generic-segmentation-offload:|generic-receive-offload:"
+        /usr/sbin/ethtool --show-eee "$eth" 2>/dev/null | grep "EEE status\|Tx LPI"
         echo "txqueuelen: $(ip link show "$eth" | grep -o "qlen [0-9]*" | cut -d" " -f2)"
-        echo "Carrier changes: $(cat /sys/class/net/eth2/carrier_changes 2>/dev/null || echo 'N/A')"
+        echo "Carrier changes: $(cat /sys/class/net/$eth/carrier_changes 2>/dev/null || echo 'N/A')"
         local usb_root
         usb_root=$(readlink -f /sys/class/net/$eth/device 2>/dev/null)
         usb_root=$(dirname "$usb_root" 2>/dev/null)
@@ -1109,9 +1123,8 @@ fix_status() {
             echo "USB device power control: $(cat "$usb_root/power/control" 2>/dev/null)"
             echo "USB device autosuspend: $(cat "$usb_root/power/autosuspend_delay_ms" 2>/dev/null)ms"
         fi
-    else
-        echo "Interface $eth does not exist"
-    fi
+    done
+    $found || echo "No r8152 interfaces found"
     echo ""
     echo "Last 10 log entries:"
     logread | grep "r8152-fix" | tail -10
