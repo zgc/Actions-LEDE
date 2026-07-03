@@ -1,6 +1,5 @@
 #!/bin/sh
 
-DATE=$(date +%Y-%m-%d-%H:%M:%S)
 tries=0
 LOG=/tmp/check_wan_connect.log
 PPPOE=$(/sbin/ifconfig 2>/dev/null | grep -c 'pppoe-wan')
@@ -9,6 +8,7 @@ DNSPOD=119.29.29.29
 
 if [ "${PPPOE}" -ne 0 ]; then
   while [ $tries -lt 5 ]; do
+    DATE=$(date +%Y-%m-%d-%H:%M:%S)
     echo "$DATE check $ALIYUN start" >>$LOG
     PING=$(ping -c1 "$ALIYUN" 2>/dev/null | grep -c '64 bytes')
     if [ "${PING}" -ne 0 ]; then
@@ -30,9 +30,13 @@ if [ "${PPPOE}" -ne 0 ]; then
   done
 else
   while [ $tries -lt 5 ]; do
+    DATE=$(date +%Y-%m-%d-%H:%M:%S)
     eth1=$(/sbin/ifconfig eth1 2>/dev/null | grep 'inet addr:' | cut -d: -f2 | awk '{ print $1}')
     if [ -n "${eth1}" ]; then
-      GATEWAY=$(echo "$eth1" | awk 'BEGIN{FS=OFS="."}{$NF=1;print}')
+      GATEWAY=$(ip route show default 2>/dev/null | head -1 | awk '{print $3}')
+      if [ -z "$GATEWAY" ]; then
+        GATEWAY=$(echo "$eth1" | awk 'BEGIN{FS=OFS="."}{$NF=1;print}')
+      fi
       PING=$(ping -c1 "$GATEWAY" 2>/dev/null | grep -c '64 bytes')
       if [ "${PING}" -ne 0 ]; then
         echo "$DATE check wan connect: OK" >>$LOG
