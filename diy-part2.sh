@@ -997,12 +997,14 @@ cat > package/base-files/files/etc/rc.local <<'RCLOCAL'
 # Put your custom commands here that should be executed once
 # the system init finished. By default this file does nothing.
 
-# r8152 TSO/GSO/GRO: disable to prevent USB deadlock under high TX load
+# r8152 TSO/GSO/GRO/EEE: disable to prevent USB deadlock under high TX load
 # Super-frames from TSO exceed USB URB limits when USB NIC is under heavy TX
+# EEE (Energy-Efficient Ethernet) can cause RX deadlock on r8152 at 100M
 for i in 1 2 3 4 5; do
   if [ -f /sys/class/net/eth2/carrier ] && [ "$(cat /sys/class/net/eth2/carrier)" = "1" ]; then
     /usr/sbin/ethtool -K eth2 tso off gso off gro off 2>/dev/null
-    logger -t "r8152-fix" "TSO/GSO/GRO disabled on eth2 (attempt $i)"
+    /usr/sbin/ethtool --set-eee eth2 eee off 2>/dev/null
+    logger -t "r8152-fix" "TSO/GSO/GRO/EEE disabled on eth2 (attempt $i)"
     break
   fi
   sleep 1
@@ -1010,14 +1012,15 @@ done
 
 # Safety net: ethtool -K is driver-level, does not require active link
 /usr/sbin/ethtool -K eth2 tso off gso off gro off 2>/dev/null
-logger -t "r8152-fix" "TSO/GSO/GRO disabled (safety net)"
+/usr/sbin/ethtool --set-eee eth2 eee off 2>/dev/null
+logger -t "r8152-fix" "TSO/GSO/GRO/EEE disabled (safety net)"
 
 ip link set eth2 txqueuelen 5000 2>/dev/null
 echo -1 > /sys/module/usbcore/parameters/autosuspend
 
 exit 0
 RCLOCAL
-echo "✅ rc.local: r8152 TSO/GSO/GRO + USB power mgmt"
+echo "✅ rc.local: r8152 TSO/GSO/GRO/EEE + USB power mgmt"
 
 # ============================================================
 # r8152 USB NIC: Late-boot init script (START=99)
@@ -1061,6 +1064,11 @@ apply_fix() {
             logger -t "r8152-fix" "TSO/GSO/GRO disabled (init.d)" || \
             logger -t "r8152-fix" "ERROR: failed to disable offload"
     fi
+
+    # Fix 1b: Disable EEE (Energy-Efficient Ethernet) — known to cause RX deadlock on r8152 at 100M
+    /usr/sbin/ethtool --set-eee "$eth" eee off 2>/dev/null && \
+        logger -t "r8152-fix" "EEE disabled" || \
+        logger -t "r8152-fix" "NOTE: EEE not supported"
 
     ip link set "$eth" txqueuelen 5000 2>/dev/null
 
@@ -1119,12 +1127,14 @@ DRIVER=$(ethtool -i "$DEVICENAME" 2>/dev/null | sed -n 's/^driver: //p')
 
 ip link set "$DEVICENAME" txqueuelen 5000 2>/dev/null
 /usr/sbin/ethtool -K "$DEVICENAME" tso off gso off gro off 2>/dev/null
-logger -t "r8152-fix" "txqueuelen 5000, tso/gso/gro off for $DEVICENAME"
+/usr/sbin/ethtool --set-eee "$DEVICENAME" eee off 2>/dev/null
+logger -t "r8152-fix" "txqueuelen 5000, tso/gso/gro/eee off for $DEVICENAME"
 HOTPLUG
 chmod +x package/base-files/files/etc/hotplug.d/net/99-r8152-offload
-echo "✅ r8152 hotplug script created (TSO/GSO/GRO)"
+echo "✅ r8152 hotplug script created (TSO/GSO/GRO/EEE)"
 
 # ============================================================
+
 # ============================================================
 # UPnP: friendly_name is configured per-device via files/etc/config/upnpd in device repos (NUC8/ZBOX)
 # ============================================================
