@@ -986,10 +986,8 @@ echo "✅ firmware_version: ${FW_DATE}-${FW_HASH} (${FW_DEVICE})"
 
 cp "$GITHUB_WORKSPACE/openwrt-device.conf" package/base-files/files/etc/openwrt-device.conf
 echo "✅ openwrt-device.conf → /etc/"
-
-# ============================================================
-# r8152 USB NIC: rc.local — boot-time TSO/GSO/GRO disable + USB power mgmt
-# Strategy: Keep autoneg ON (stable), disable TSO/GSO/GRO only (prevents deadlock)
+# r8152 USB NIC: rc.local — boot-time TSO/GSO/GRO/EEE disable + USB power mgmt
+# Strategy: Keep autoneg ON (stable), disable TSO/GSO/GRO/EEE (prevents deadlock)
 # NOTE: Do NOT force autoneg off — r8152 driver flapping under forced mode.
 # NOTE: Do NOT ethtool -K rx/tx checksum — keep for performance.
 # ============================================================
@@ -1000,27 +998,38 @@ cat > package/base-files/files/etc/rc.local <<'RCLOCAL'
 # r8152 TSO/GSO/GRO/EEE: disable to prevent USB deadlock under high TX load
 # Super-frames from TSO exceed USB URB limits when USB NIC is under heavy TX
 # EEE (Energy-Efficient Ethernet) can cause RX deadlock on r8152 at 100M
-for i in 1 2 3 4 5; do
-  if [ -f /sys/class/net/eth2/carrier ] && [ "$(cat /sys/class/net/eth2/carrier)" = "1" ]; then
-    /usr/sbin/ethtool -K eth2 tso off gso off gro off 2>/dev/null
-    /usr/sbin/ethtool --set-eee eth2 eee off 2>/dev/null
-    logger -t "r8152-fix" "TSO/GSO/GRO/EEE disabled on eth2 (attempt $i)"
-    break
-  fi
-  sleep 1
+# Iterate over all interfaces — works with any number of r8152 NICs
+for eth in /sys/class/net/eth*; do
+	[ -e "$eth" ] || continue
+	eth_name="${eth##*/}"
+	# Check driver: r8152 only
+	driver=$(readlink -f "$eth/device/driver" 2>/dev/null)
+	[ "${driver##*/}" = "r8152" ] || continue
+
+	for i in 1 2 3 4 5; do
+		if [ -f "/sys/class/net/$eth_name/carrier" ] && [ "$(cat "/sys/class/net/$eth_name/carrier")" = "1" ]; then
+			/usr/sbin/ethtool -K "$eth_name" tso off gso off gro off 2>/dev/null
+			/usr/sbin/ethtool --set-eee "$eth_name" eee off 2>/dev/null
+			logger -t "r8152-fix" "TSO/GSO/GRO/EEE disabled on $eth_name (attempt $i)"
+			break
+		fi
+		sleep 1
+	done
+
+	# Safety net: ethtool -K is driver-level, does not require active link
+	/usr/sbin/ethtool -K "$eth_name" tso off gso off gro off 2>/dev/null
+	/usr/sbin/ethtool --set-eee "$eth_name" eee off 2>/dev/null
+	logger -t "r8152-fix" "TSO/GSO/GRO/EEE disabled on $eth_name (safety net)"
+
+	ip link set "$eth_name" txqueuelen 5000 2>/dev/null
 done
 
-# Safety net: ethtool -K is driver-level, does not require active link
-/usr/sbin/ethtool -K eth2 tso off gso off gro off 2>/dev/null
-/usr/sbin/ethtool --set-eee eth2 eee off 2>/dev/null
-logger -t "r8152-fix" "TSO/GSO/GRO/EEE disabled (safety net)"
-
-ip link set eth2 txqueuelen 5000 2>/dev/null
 echo -1 > /sys/module/usbcore/parameters/autosuspend
 
 exit 0
 RCLOCAL
 echo "✅ rc.local: r8152 TSO/GSO/GRO/EEE + USB power mgmt"
+# ============================================================
 
 # ============================================================
 # r8152 USB NIC: Late-boot init script (START=99)
