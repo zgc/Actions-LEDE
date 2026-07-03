@@ -1134,65 +1134,6 @@ chmod +x package/base-files/files/etc/hotplug.d/net/99-r8152-offload
 echo "✅ r8152 hotplug script created (TSO/GSO/GRO/EEE)"
 
 # ============================================================
-# r8152 USB NIC: RX watchdog — detect RX deadlock and reset USB
-# r8152 at 100M can enter a state where TX works but RX=0.
-# This cron script checks rx_packets every 5 min and performs
-# USB authorized reset if RX is stuck.
-# ============================================================
-mkdir -p package/base-files/files/etc
-cat > package/base-files/files/etc/watchdog-r8152-rx.sh <<'WDEOF'
-#!/bin/sh
-# r8152 RX watchdog: reset USB if RX stuck for multiple checks
-# Runs from cron every 5 minutes, persists state in /tmp
-
-for dev in /sys/class/net/eth*; do
-	[ -e "$dev" ] || continue
-	eth="${dev##*/}"
-	driver=$(readlink -f "$dev/device/driver" 2>/dev/null)
-	[ "${driver##*/}" = "r8152" ] || continue
-
-	# Read current rx_packets from ethtool stats
-	cur_rx=$(/usr/sbin/ethtool -S "$eth" 2>/dev/null | grep "^     rx_packets:" | awk '{print $2}')
-	[ -z "$cur_rx" ] && continue
-
-	state_file="/tmp/r8152-rx-watchdog-$eth"
-	prev_rx=""
-	prev_ts=0
-	if [ -f "$state_file" ]; then
-		read -r prev_rx prev_ts < "$state_file"
-	fi
-
-	now=$(date +%s)
-
-	if [ "$prev_rx" = "$cur_rx" ] && [ "$prev_rx" != "" ]; then
-		elapsed=$((now - prev_ts))
-		# A 60-second window for the first check; then reset if stuck > 300s
-		if [ "$elapsed" -ge 60 ] && [ "$cur_rx" -eq 0 ] 2>/dev/null; then
-			logger -t "r8152-watchdog" "RX stuck (0 for ${elapsed}s) on $eth, resetting USB..."
-			# Find USB device path
-			usb_dev=$(readlink -f "/sys/class/net/$eth/device" 2>/dev/null)
-			usb_id=$(basename "$(dirname "$usb_dev" 2>/dev/null)" 2>/dev/null)
-			if [ -n "$usb_id" ] && [ -d "/sys/bus/usb/devices/$usb_id" ]; then
-				echo 0 > "/sys/bus/usb/devices/$usb_id/authorized" 2>/dev/null
-				sleep 2
-				echo 1 > "/sys/bus/usb/devices/$usb_id/authorized" 2>/dev/null
-				logger -t "r8152-watchdog" "USB authorized reset done on $eth ($usb_id)"
-			fi
-			# Reset state file after reset
-			echo "$cur_rx $now" > "$state_file"
-		fi
-	else
-		# RX changed or first check: update state
-		echo "$cur_rx $now" > "$state_file"
-	fi
-done
-WDEOF
-chmod +x package/base-files/files/etc/watchdog-r8152-rx.sh
-echo "✅ r8152 RX watchdog script created"
-
-# Add RX watchdog to cron (runs every 5 min)
-sed -i '/exit 0/i\if ! grep -q "watchdog-r8152-rx" /etc/crontabs/root 2>/dev/null; then echo "*/5 * * * * /etc/watchdog-r8152-rx.sh" >> /etc/crontabs/root; fi' package/emortal/default-settings/files/99-default-settings
-echo "✅ r8152 RX watchdog cron added"
 
 # ============================================================
 # UPnP: friendly_name is configured per-device via files/etc/config/upnpd in device repos (NUC8/ZBOX)
