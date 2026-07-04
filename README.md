@@ -24,15 +24,22 @@ Fork this repository, then push a custom `config.seed` and optional `files/` ove
 
 ```bash
 cd docker
-docker-compose run --rm build
+
+# First build (or after path changes): clean stale toolchain
+# docker compose up clean     # manual, only when needed
+
+# Daily build
+docker compose up build
 ```
 
 To reuse the cross-compiler toolchain across rebuilds:
 
 ```bash
-# Create a cache directory on a fast volume
 mkdir -p /data/build-cache
-docker-compose run -e BUILD_CACHE_DIR=/workdir/Actions-LEDE/cache -v /data/build-cache:/workdir/Actions-LEDE/cache --rm build
+docker compose run \
+  -e BUILD_CACHE_DIR=/workspace/cache \
+  -v /data/build-cache:/workspace/cache \
+  --rm build
 ```
 
 Output goes to `release/` — `.img.gz` firmware plus `.manifest` and checksums.
@@ -52,7 +59,7 @@ Output goes to `release/` — `.img.gz` firmware plus `.manifest` and checksums.
 | `diy-part1.sh` | Custom packages & feed patches (runs before `feeds update`) |
 | `diy-part2.sh` | UCI defaults, config templates, package fixes (runs after `feeds install`) |
 | `config.seed` | OpenWrt `.config` template (`make defconfig` input) |
-| `docker/docker-compose.yml` | Local build container definition |
+| `docker/docker-compose.yml` | Local build services (builder, clean, build) |
 | `docker/docker-build.sh` | Script inside the container to launch `build.sh` |
 | `files/` | Root overlay for firmware image (optional) |
 
@@ -66,7 +73,7 @@ actions-lede/
 ├── diy-part2.sh           # Post-feeds customizations
 ├── build.sh               # Full build script
 ├── docker/
-│   ├── docker-compose.yml # Container orchestration
+│   ├── docker-compose.yml # builder / clean / build services
 │   └── docker-build.sh    # Container entrypoint
 ├── files/                 # Firmware root overlay
 └── scripts/               # Custom build-time helpers
@@ -75,7 +82,8 @@ actions-lede/
 ## Notes
 
 - **Caching**: the `BUILD_CACHE_DIR` volume preserves `dl/`, `staging_dir/`, and `build_dir/` between containers — saves ~15 minutes per rebuild.
-- **Clean rebuild**: `docker-compose down -v` removes all volumes; the next build starts fresh.
+- **Clean toolchain**: `docker compose up clean` removes stale toolchain artifacts (build_dir/toolchain*, staging_dir/toolchain*) — run after switching build paths or when toolchain gets corrupted.
+- **Full reset**: stop containers, delete `openwrt/`, then `docker compose up build` for a from-scratch build.
 - The expanded `.config` is saved as `config.buildinfo` after each successful build.
 
 ## Credits
