@@ -1171,19 +1171,14 @@ if [ -f ".config" ]; then
 fi
 
 # ============================================================
-# RTL8157 firmware: Download directly (not in linux-firmware yet)
+# RTL8157 firmware: Copy from repo (pre-downloaded, git-tracked)
 # ============================================================
+echo "Installing rtl8157-1.fw firmware..."
 mkdir -p "package/base-files/files/lib/firmware/rtl_nic"
-if [ ! -f "package/base-files/files/lib/firmware/rtl_nic/rtl8157-1.fw" ]; then
-	echo "Downloading rtl8157-1.fw firmware..."
-	curl -L -o "package/base-files/files/lib/firmware/rtl_nic/rtl8157-1.fw" \
-		"https://git.kernel.org/pub/scm/linux/kernel/git/firmware/linux-firmware.git/plain/rtl_nic/rtl8157-1.fw" 2>/dev/null
-	if [ -f "package/base-files/files/lib/firmware/rtl_nic/rtl8157-1.fw" ]; then
-		echo "Downloaded rtl8157-1.fw firmware"
-	else
-		echo "WARNING: Failed to download rtl8157-1.fw"
-	fi
+if [ -f "files/firmware/rtl_nic/rtl8157-1.fw" ]; then
+	cp "files/firmware/rtl_nic/rtl8157-1.fw" "package/base-files/files/lib/firmware/rtl_nic/"
+	echo "Installed rtl8157-1.fw firmware from repo"
 else
-	echo "rtl8157-1.fw already exists"
+	echo "WARNING: rtl8157-1.fw not found in files/"
 fi
 
