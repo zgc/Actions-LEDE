@@ -74,6 +74,6 @@ if ! echo "$IMG_SUM" | grep 'OK' ; then
 fi
 
 echo -e '\e[92m开始写入 '$IMG' 到 '$DISK'\e[0m'
-dd if=$IMG of=/dev/$DISK
+dd if=$IMG of=/dev/$DISK conv=fsync status=progress
 echo -e '\e[92m写入结束，重启\e[0m'
 echo b > /proc/sysrq-trigger

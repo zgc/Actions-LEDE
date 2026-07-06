@@ -257,6 +257,27 @@ jobs:
         fi
         # zerotier and adguardhome are already enabled in config.seed
 
+        # Fix gnutls 3.8.10 stdbool.h cross-compilation error
+        # gnulib detects ac_cv_header_stdbool_h=yes but replacement module
+        # still undef's HAVE_STDBOOL_H. Patch config.h after configure.
+        GNUTLS_FEED=feeds/packages/libs/gnutls
+        if [ -f "$GNUTLS_FEED/Makefile" ]; then
+          if ! grep -q 'HAVE_STDBOOL_H' "$GNUTLS_FEED/Makefile"; then
+            sed -i '/^define Build\/InstallDev/i define Build/Configure\n\t$$(call Build/Configure/Default)\n\t$$(SED) "s|/\\* #undef HAVE_STDBOOL_H \\*/|#define HAVE_STDBOOL_H 1|" $$(PKG_BUILD_DIR)/config.h\nendef\n' "$GNUTLS_FEED/Makefile"
+            echo "✅ gnutls: HAVE_STDBOOL_H fix applied"
+          else
+            echo "✅ gnutls: HAVE_STDBOOL_H fix already present"
+          fi
+        fi
+
+        # Disable Python3 host PGO (~8 min savings per build)
+        # Host Python3 is only a build tool — PGO has zero benefit to firmware
+        PY3_MAKEFILE=feeds/packages/lang/python/python3/Makefile
+        if [ -f "$PY3_MAKEFILE" ] && grep -q -- '--enable-optimizations' "$PY3_MAKEFILE"; then
+          sed -i 's/--enable-optimizations/--disable-optimizations/' "$PY3_MAKEFILE"
+          echo "✅ python3 host: PGO disabled"
+        fi
+
     - name: Load custom configuration
       timeout-minutes: 2
       run: |
