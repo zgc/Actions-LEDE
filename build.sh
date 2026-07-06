@@ -164,6 +164,29 @@ pushd openwrt
 GITHUB_WORKSPACE=$GITHUB_WORKSPACE $GITHUB_WORKSPACE/$DIY_P2_SH
 make defconfig || { echo "❌ defconfig (post diy) failed"; exit 1; }
 
+# Prevent false-positive full rebuild due to defconfig timestamp change.
+# make defconfig updates .config mtime, which makes all existing .built stamps
+# appear stale. The solution: touch existing .built to match .config so make only
+# compiles genuinely new packages (like smartdns) that have no .built yet.
+# Docker overlay2 filesystem rounds down sub-second timestamps, so
+# `touch -r .config` makes .built ~1s OLDER than .config → full rebuild.
+# Fix: set timestamps to .config epoch + 2 seconds to ensure .built > .config.
+CONFIG_TS=$(stat -c%Y .config)
+NEW_TS=$((CONFIG_TS + 2))
+# Sync all existing .built stamps to .config + 2s so make skips stale packages.
+find build_dir/target-*/ -name .built -exec touch -d @$NEW_TS {} \; 2>/dev/null || true
+find build_dir/hostpkg/ -name .built -exec touch -d @$NEW_TS {} \; 2>/dev/null || true
+# Sync _installed stamps EXCEPT smartdns/luci-app-smartdns (must be rebuilt).
+find staging_dir/target-*/stamp/ -name ".*_installed" ! -name "*.smartdns*" ! -name "*.luci-app-smartdns*" -exec touch -d @$NEW_TS {} \; 2>/dev/null || true
+find staging_dir/hostpkg/stamp/ -name ".*_installed" ! -name "*.smartdns*" ! -name "*.luci-app-smartdns*" -exec touch -d @$NEW_TS {} \; 2>/dev/null || true
+# CLEAN smartdns stamps from build_dir so make recompiles from scratch
+# (built from incomplete 6th-build artifacts, install always fails).
+rm -f build_dir/target-*/smartdns-*/.built
+rm -f build_dir/target-*/luci-app-smartdns-*/.built
+rm -f staging_dir/target-*/stamp/.smartdns_installed
+rm -f staging_dir/target-*/stamp/.luci-app-smartdns_installed
+unset CONFIG_TS NEW_TS
+
 # ============================================================
 # Section 6: Package Fixes
 # ============================================================
@@ -332,6 +355,11 @@ rm -f build_dir/target-x86_64_musl/linux-x86_64/root.squashfs
 rm -rf build_dir/target-x86_64_musl/linux-x86_64/target-dir-*
 
 echo "=== Stale squashfs/target-dir cleaned ==="
+
+# Free memory before main build to prevent OOM
+sync; echo 3 > /proc/sys/vm/drop_caches 2>/dev/null || true
+
+echo "=== Memory caches dropped, starting main build ==="
 
 make -j$(nproc) V=s
 BUILD_RC=$?
