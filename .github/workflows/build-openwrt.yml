@@ -278,6 +278,13 @@ jobs:
           echo "✅ python3 host: PGO disabled"
         fi
 
+        # Fix r8152-firmware: rtl8157* firmware files not in linux-firmware-20260622
+        R8152_FW_MK=package/firmware/linux-firmware/realtek.mk
+        if [ -f "$R8152_FW_MK" ] && grep -q 'rtl8157\*' "$R8152_FW_MK"; then
+          sed -i '/rtl8157\*/d' "$R8152_FW_MK"
+          echo "✅ r8152-firmware: removed rtl8157*"
+        fi
+
     - name: Load custom configuration
       timeout-minutes: 2
       run: |
