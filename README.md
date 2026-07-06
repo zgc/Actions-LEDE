@@ -1,44 +1,85 @@
-**English** | [中文](https://p3terx.com/archives/build-openwrt-with-github-actions.html)
+# Actions-LEDE
 
-# Actions-OpenWrt
+Build [ImmortalWrt](https://github.com/immortalwrt/immortalwrt) firmware with GitHub Actions or locally via Docker.
 
-[![LICENSE](https://img.shields.io/github/license/mashape/apistatus.svg?style=flat-square&label=LICENSE)](https://github.com/P3TERX/Actions-OpenWrt/blob/master/LICENSE)
-![GitHub Stars](https://img.shields.io/github/stars/P3TERX/Actions-OpenWrt.svg?style=flat-square&label=Stars&logo=github)
-![GitHub Forks](https://img.shields.io/github/forks/P3TERX/Actions-OpenWrt.svg?style=flat-square&label=Forks&logo=github)
+## Features
 
-A template for building OpenWrt with GitHub Actions
+- **ImmortalWrt master** base — up-to-date kernel and packages
+- **GitHub Actions** workflow for automated builds (push to trigger)
+- **Local Docker build** — reproducible, same environment as Actions, with optional build cache
+- **Custom script hooks** — `diy-part1.sh` (pre-feeds) and `diy-part2.sh` (post-feeds) for custom packages/config
+- **Device-specific overrides** — use `openwrt-device.conf` to set `RELEASE_NAME` and `BUILD_CACHE_DIR` per device
 
-## Usage
+## Quick Start
 
-- Click the [Use this template](https://github.com/P3TERX/Actions-OpenWrt/generate) button to create a new repository.
-- Generate `.config` files using [Lean's OpenWrt](https://github.com/coolsnowwolf/lede) source code. ( You can change it through environment variables in the workflow file. )
-- Push `.config` file to the GitHub repository.
-- Select `Build OpenWrt` on the Actions page.
-- Click the `Run workflow` button.
-- When the build is complete, click the `Artifacts` button in the upper right corner of the Actions page to download the binaries.
+### 1. Fork & configure
 
-## Tips
+Fork this repository, then push a custom `config.seed` and optional `files/` overlay directory.
 
-- It may take a long time to create a `.config` file and build the OpenWrt firmware. Thus, before create repository to build your own firmware, you may check out if others have already built it which meet your needs by simply [search `Actions-Openwrt` in GitHub](https://github.com/search?q=Actions-openwrt).
-- Add some meta info of your built firmware (such as firmware architecture and installed packages) to your repository introduction, this will save others' time.
+### 2. Trigger a build
+
+**GitHub Actions:** push to the `main` branch — the workflow builds automatically.
+
+**Local Docker build:**
+
+```bash
+cd docker
+docker-compose run --rm build
+```
+
+To reuse the cross-compiler toolchain across rebuilds:
+
+```bash
+# Create a cache directory on a fast volume
+mkdir -p /data/build-cache
+docker-compose run -e BUILD_CACHE_DIR=/workdir/Actions-LEDE/cache -v /data/build-cache:/workdir/Actions-LEDE/cache --rm build
+```
+
+Output goes to `release/` — `.img.gz` firmware plus `.manifest` and checksums.
+
+### 3. Customize
+
+- **`config.seed`** — package selection (start from ImmortalWrt `make menuconfig`)
+- **`diy-part1.sh`** — clone custom packages, patch feeds before `feeds update`
+- **`diy-part2.sh`** — UCI defaults, config templates, package fixes after `feeds install`
+- **`files/`** — overlay directory copied verbatim into the firmware image
+
+## Files
+
+| File | Purpose |
+|------|---------|
+| `build.sh` | Full build pipeline (clone → feeds → configure → compile → package) |
+| `diy-part1.sh` | Custom packages & feed patches (runs before `feeds update`) |
+| `diy-part2.sh` | UCI defaults, config templates, package fixes (runs after `feeds install`) |
+| `config.seed` | OpenWrt `.config` template (`make defconfig` input) |
+| `docker/docker-compose.yml` | Local build container definition |
+| `docker/docker-build.sh` | Script inside the container to launch `build.sh` |
+| `files/` | Root overlay for firmware image (optional) |
+
+## Project Structure
+
+```
+actions-lede/
+├── .github/workflows/     # GitHub Actions workflow
+├── config.seed            # Package selection template
+├── diy-part1.sh           # Pre-feeds customizations
+├── diy-part2.sh           # Post-feeds customizations
+├── build.sh               # Full build script
+├── docker/
+│   ├── docker-compose.yml # Container orchestration
+│   └── docker-build.sh    # Container entrypoint
+├── files/                 # Firmware root overlay
+└── scripts/               # Custom build-time helpers
+```
+
+## Notes
+
+- **Caching**: the `BUILD_CACHE_DIR` volume preserves `dl/`, `staging_dir/`, and `build_dir/` between containers — saves ~15 minutes per rebuild.
+- **Clean rebuild**: `docker-compose down -v` removes all volumes; the next build starts fresh.
+- The expanded `.config` is saved as `config.buildinfo` after each successful build.
 
 ## Credits
 
-- [Microsoft Azure](https://azure.microsoft.com)
+- [ImmortalWrt](https://github.com/immortalwrt/immortalwrt)
+- [P3TERX/Actions-OpenWrt](https://github.com/P3TERX/Actions-OpenWrt) — original template
 - [GitHub Actions](https://github.com/features/actions)
-- [OpenWrt](https://github.com/openwrt/openwrt)
-- [Lean's OpenWrt](https://github.com/coolsnowwolf/lede)
-- [tmate](https://github.com/tmate-io/tmate)
-- [mxschmitt/action-tmate](https://github.com/mxschmitt/action-tmate)
-- [csexton/debugger-action](https://github.com/csexton/debugger-action)
-- [Cowtransfer](https://cowtransfer.com)
-- [WeTransfer](https://wetransfer.com/)
-- [Mikubill/transfer](https://github.com/Mikubill/transfer)
-- [softprops/action-gh-release](https://github.com/softprops/action-gh-release)
-- [ActionsRML/delete-workflow-runs](https://github.com/ActionsRML/delete-workflow-runs)
-- [dev-drprasad/delete-older-releases](https://github.com/dev-drprasad/delete-older-releases)
-- [peter-evans/repository-dispatch](https://github.com/peter-evans/repository-dispatch)
-
-## License
-
-[MIT](https://github.com/P3TERX/Actions-OpenWrt/blob/main/LICENSE) © [**P3TERX**](https://p3terx.com)

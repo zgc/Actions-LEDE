@@ -81,7 +81,7 @@ jobs:
         echo "=============================================================================="
 
     - name: Checkout
-      uses: actions/checkout@main
+      uses: actions/checkout@v4
 
     - name: Load device config
       run: |
@@ -95,6 +95,12 @@ jobs:
           fi
         else
           echo "No openwrt-device.conf found, using default RELEASE_NAME"
+        fi
+        # Extract DEVICE_ARCH from config.seed for build cache key
+        if [ -f config.seed ]; then
+          DEVICE_ARCH=$(grep '^CONFIG_TARGET_[a-z0-9_]*=y$' config.seed 2>/dev/null | tail -1 | sed 's/^CONFIG_TARGET_//;s/=y$//')
+          echo "DEVICE_ARCH=${DEVICE_ARCH:-x86_64}" >> $GITHUB_ENV
+          echo "✅ DEVICE_ARCH: ${DEVICE_ARCH:-x86_64}"
         fi
 
     - name: Initialization environment
@@ -232,7 +238,7 @@ jobs:
       run: df -hT
 
     - name: Upload bin directory
-      uses: actions/upload-artifact@main
+      uses: actions/upload-artifact@v4
       if: steps.compile.outputs.status == 'success' && env.UPLOAD_BIN_DIR == 'true'
       with:
         name: OpenWrt_bin_${{ env.DEVICE_NAME }}_${{ env.FILE_DATE }}
@@ -253,7 +259,7 @@ jobs:
         echo "status=success" >> $GITHUB_OUTPUT
 
     - name: Upload firmware directory
-      uses: actions/upload-artifact@main
+      uses: actions/upload-artifact@v4
       if: steps.organize.outputs.status == 'success' && !cancelled()
       with:
         name: OpenWrt_firmware_${{ env.DEVICE_NAME }}_${{ env.FILE_DATE }}
