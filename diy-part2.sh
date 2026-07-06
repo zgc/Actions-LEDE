@@ -1161,23 +1161,6 @@ echo "✅ r8152 hotplug script created (TSO/GSO/GRO/EEE)"
 # UPnP: friendly_name is configured per-device via files/etc/config/upnpd in device repos (NUC8/ZBOX)
 # ============================================================
 
-# ============================================================
-# RTL8157 5G USB NIC firmware support
-# linux-firmware package only includes rtl8153/8156, need to add 8157
-# ============================================================
-echo "Patching linux-firmware/realtek.mk for RTL8157 support..."
-if [ -f "package/firmware/linux-firmware/realtek.mk" ]; then
-	# Check if already patched
-	if ! grep -q "rtl8157" package/firmware/linux-firmware/realtek.mk; then
-		# Add rtl8157* after rtl8156* line
-		sed -i 's|$(PKG_BUILD_DIR)/rtl_nic/rtl8156\* \\|$(PKG_BUILD_DIR)/rtl_nic/rtl8156* \\\\\n\t\t$(PKG_BUILD_DIR)/rtl_nic/rtl8157* \\|' package/firmware/linux-firmware/realtek.mk
-		echo "Patched realtek.mk: added rtl8157 firmware"
-	else
-		echo "realtek.mk already has rtl8157 support"
-	fi
-else
-	echo "realtek.mk not found, skipping patch"
-fi
 
 # Ensure r8152-firmware is enabled in .config
 if [ -f ".config" ]; then
