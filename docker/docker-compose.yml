@@ -1,19 +1,40 @@
-version: '3.8'
+name: openwrt-build
 
 services:
   builder:
     image: actions-lede-builder:latest
-    container_name: openwrt-base-builder
+    container_name: openwrt-builder
     volumes:
-      - ..:/workdir/Actions-LEDE
+      - ..:/workspace
     stdin_open: true
     tty: true
     command: /bin/bash
 
+  # Manual run: docker compose up clean (use before first build or after path changes)
+  clean:
+    image: actions-lede-builder:latest
+    container_name: openwrt-clean
+    volumes:
+      - ..:/workspace
+    command:
+      - bash
+      - -c
+      - |
+        echo "=== Cleaning stale toolchain artifacts ==="
+        rm -rf /workspace/openwrt/build_dir/toolchain*
+        rm -rf /workspace/openwrt/staging_dir/toolchain*
+        rm -f /workspace/openwrt/build_dir/target-*/root.squashfs
+        rm -rf /workspace/openwrt/build_dir/target-*/target-dir-*
+        echo "=== Cleanup done ==="
+    restart: "no"
+
   build:
     image: actions-lede-builder:latest
-    container_name: openwrt-base-build
+    container_name: openwrt-build
     volumes:
-      - ..:/workdir/Actions-LEDE
-    command: >
-      bash -c "cd /workdir/Actions-LEDE && bash build.sh"
+      - ..:/workspace
+    command:
+      - bash
+      - -c
+      - cd /workspace && bash build.sh
+    restart: "no"

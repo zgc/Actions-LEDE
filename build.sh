@@ -187,6 +187,7 @@ NEW_TS=$((CONFIG_TS + 2))
 # Sync all existing .built stamps to .config + 2s so make skips stale packages.
 find build_dir/target-*/ -name .built -exec touch -d @$NEW_TS {} \; 2>/dev/null || true
 find build_dir/hostpkg/ -name .built -exec touch -d @$NEW_TS {} \; 2>/dev/null || true
+find build_dir/toolchain*/ -name .built -exec touch -d @$NEW_TS {} \; 2>/dev/null || true
 # Sync _installed stamps EXCEPT smartdns/luci-app-smartdns (must be rebuilt).
 find staging_dir/target-*/stamp/ -name ".*_installed" ! -name "*.smartdns*" ! -name "*.luci-app-smartdns*" -exec touch -d @$NEW_TS {} \; 2>/dev/null || true
 find staging_dir/hostpkg/stamp/ -name ".*_installed" ! -name "*.smartdns*" ! -name "*.luci-app-smartdns*" -exec touch -d @$NEW_TS {} \; 2>/dev/null || true
