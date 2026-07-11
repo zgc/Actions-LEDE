@@ -1159,16 +1159,5 @@ chmod +x package/base-files/files/etc/hotplug.d/net/99-r8152-offload
 echo "✅ r8152 hotplug script created (TSO/GSO/GRO/EEE)"
 
 # ============================================================
-
-# ============================================================
 # UPnP: friendly_name is configured per-device via files/etc/config/upnpd in device repos (NUC8/ZBOX)
 # ============================================================
-
-
-# Ensure r8152-firmware is enabled in .config
-if [ -f ".config" ]; then
-	if ! grep -q "CONFIG_PACKAGE_r8152-firmware=y" .config; then
-		echo "CONFIG_PACKAGE_r8152-firmware=y" >> .config
-		echo "Added CONFIG_PACKAGE_r8152-firmware=y to .config"
-	fi
-fi

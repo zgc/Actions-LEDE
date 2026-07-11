@@ -290,14 +290,6 @@ if [ -f "$PY3_FEED/Makefile" ]; then
   fi
 fi
 
-# Fix r8152-firmware: rtl8157* firmware files not in linux-firmware-20260622
-# Only rtl8153* and rtl8156* exist; rtl8157* causes cp error → build failure
-R8152_FW_MK=package/firmware/linux-firmware/realtek.mk
-if [ -f "$R8152_FW_MK" ] && grep -q 'rtl8157\*' "$R8152_FW_MK"; then
-  sed -i '/rtl8157\*/d' "$R8152_FW_MK"
-  echo "✅ r8152-firmware: removed rtl8157* (not in linux-firmware source)"
-fi
-
 # RTL8157 optional PHY firmware is not yet distributed by linux-firmware.
 # Do not inject an unverified local file or mutate the kernel driver at build time.
 
