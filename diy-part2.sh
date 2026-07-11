@@ -989,6 +989,11 @@ echo "✅ firmware_version: ${FW_DATE}-${FW_HASH} (${FW_DEVICE})"
 
 cp "$GITHUB_WORKSPACE/openwrt-device.conf" package/base-files/files/etc/openwrt-device.conf
 echo "✅ openwrt-device.conf → /etc/"
+
+# Legacy r8152 workarounds are deliberately disabled. Interface roles are
+# assigned by physical port mapping, and driver-specific rebind/offload code
+# must not alter networking behaviour across devices.
+if false; then
 # r8152 USB NIC: rc.local — boot-time TSO/GSO/GRO/EEE disable + USB power mgmt
 # Strategy: Keep autoneg ON (stable), disable TSO/GSO/GRO/EEE (prevents deadlock)
 # NOTE: Do NOT force autoneg off — r8152 driver flapping under forced mode.
@@ -1157,6 +1162,14 @@ logger -t "r8152-fix" "txqueuelen 5000, tso/gso/gro/eee off for $DEVICENAME"
 HOTPLUG
 chmod +x package/base-files/files/etc/hotplug.d/net/99-r8152-offload
 echo "✅ r8152 hotplug script created (TSO/GSO/GRO/EEE)"
+fi
+
+rm -f package/base-files/files/etc/init.d/r8152-fix \
+	package/base-files/files/etc/hotplug.d/net/99-r8152-offload
+cat > package/base-files/files/etc/rc.local <<'RCLOCAL'
+#!/bin/sh
+exit 0
+RCLOCAL
 
 # ============================================================
 # UPnP: friendly_name is configured per-device via files/etc/config/upnpd in device repos (NUC8/ZBOX)
