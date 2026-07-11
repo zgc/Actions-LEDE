@@ -13,6 +13,13 @@
 # ============================================================
 
 GITHUB_WORKSPACE=$(cd $(dirname $0);pwd)
+# A firmware must be reproducible from a committed source tree.  Device
+# repositories frequently contain local experiments, and building from one
+# makes the resulting image impossible to audit or reproduce.
+if [ "${ALLOW_DIRTY_BUILD:-0}" != "1" ] && [ -n "$(git -C "$GITHUB_WORKSPACE" status --porcelain)" ]; then
+  echo "ERROR: refusing to build from a dirty work tree. Commit, stash, or set ALLOW_DIRTY_BUILD=1 intentionally."
+  exit 1
+fi
 # Source device-specific overrides
 [ -f "$GITHUB_WORKSPACE/openwrt-device.conf" ] && source "$GITHUB_WORKSPACE/openwrt-device.conf"
 
