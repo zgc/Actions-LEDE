@@ -88,7 +88,8 @@ CONFIG_PACKAGE_kmod-usb3=y
 # with the in-tree module, so only one of the two may be selected.
 # CONFIG_PACKAGE_kmod-usb-net-rtl8152 is not set
 CONFIG_PACKAGE_kmod-usb-net-rtl8152-vendor=y
-CONFIG_PACKAGE_r8152-firmware=y
+# The vendor driver contains its own firmware loader.
+# CONFIG_PACKAGE_r8152-firmware is not set
 CONFIG_PACKAGE_bnx2x-firmware=y
 CONFIG_PACKAGE_kmod-r8125=y
 # NIC drivers (PCI) — 显式声明防止自动依赖变动丢失
