@@ -298,6 +298,9 @@ if [ -f "$R8152_FW_MK" ] && grep -q 'rtl8157\*' "$R8152_FW_MK"; then
   echo "✅ r8152-firmware: removed rtl8157* (not in linux-firmware source)"
 fi
 
+# RTL8157 optional PHY firmware is not yet distributed by linux-firmware.
+# Do not inject an unverified local file or mutate the kernel driver at build time.
+
 # ============================================================
 # Section 8: Download
 # ============================================================

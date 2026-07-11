@@ -1,51 +1,47 @@
 #!/bin/bash
+set -euo pipefail
 
-# Source openwrt-device.conf
+# The device config also contains build-host-only variables that may reference
+# unset environment variables. Load it before enabling nounset behavior.
+set +u
 [ -f /etc/openwrt-device.conf ] && . /etc/openwrt-device.conf
+set -u
 
 IMG_DIR=${IMG_DIR:-/tmp}
-cd $IMG_DIR
-
 DISK=${DISK:-sda}
-ARCH=`uname -m`
-RELEASE_NAME=${RELEASE_NAME:-$ARCH}
+RELEASE_NAME=${RELEASE_NAME:-$(uname -m)}
+IMG_GZ="${RELEASE_NAME}.img.gz"
+IMG_GZ_MD5="${RELEASE_NAME}.img.gz.md5"
+IMG_MD5="${RELEASE_NAME}.img.md5"
+IMG="${RELEASE_NAME}.img"
+IMG_TMP="${IMG}.partial"
 
-IMG_GZ=$RELEASE_NAME.img.gz
-IMG_GZ_MD5=$RELEASE_NAME.img.gz.md5
-IMG_MD5=$RELEASE_NAME.img.md5
-IMG=$RELEASE_NAME.img
-
-echo -e '\e[92m准备更新 '$ARCH' img 到 '$DISK'\e[0m'
-
-echo -e '\e[92m开始检查 '$IMG_GZ'\e[0m'
-[ ! -e $IMG_GZ ] && echo -e "\e[91m '$IMG_GZ' 不存在\e[0m" && exit 1
-echo -e '\e[92m开始检查 '$IMG_GZ_MD5'\e[0m'
-[ ! -e $IMG_GZ_MD5 ] && echo -e "\e[91m '$IMG_GZ_MD5' 不存在\e[0m" && exit 1
-
-echo -e '\e[92m开始校验 '$IMG_GZ'\e[0m'
-GZ_SUM="$(md5sum -c $IMG_GZ_MD5)"
-if ! echo "$GZ_SUM" | grep 'OK' ; then
-	echo -e "\e[91mMD5值匹配失败 $GZ_SUM\e[0m"
+fail() {
+	echo -e "\e[91m$*\e[0m" >&2
 	exit 1
-fi
+}
 
-echo -e '\e[92m开始检查 '$IMG_MD5'\e[0m'
-[ ! -e $IMG_MD5 ] && echo -e "\e[91m '$IMG_MD5' 不存在\e[0m" && exit 1
+cd "$IMG_DIR" || fail "无法进入镜像目录: $IMG_DIR"
+[ -b "/dev/$DISK" ] || fail "不是块设备: /dev/$DISK"
+[ -f "$IMG_GZ" ] || fail "镜像不存在: $IMG_GZ"
+[ -f "$IMG_GZ_MD5" ] || fail "压缩镜像校验文件不存在: $IMG_GZ_MD5"
+[ -f "$IMG_MD5" ] || fail "原始镜像校验文件不存在: $IMG_MD5"
 
+echo -e "\e[92m校验压缩镜像: $IMG_GZ\e[0m"
+md5sum -c -- "$IMG_GZ_MD5" || fail "压缩镜像校验失败"
 
-echo -e '\e[92m开始清理 '$IMG'\e[0m'
-[ -e $IMG ] && rm $IMG
-echo -e '\e[92m开始解压 '$IMG_GZ'\e[0m'
-gzip -d $IMG_GZ
+rm -f -- "$IMG_TMP"
+trap 'rm -f -- "$IMG_TMP"' EXIT
+echo -e "\e[92m解压镜像: $IMG_GZ\e[0m"
+gzip -dc -- "$IMG_GZ" > "$IMG_TMP" || fail "镜像解压失败"
+mv -f -- "$IMG_TMP" "$IMG"
 
-echo -e '\e[92m开始校验 '$IMG'\e[0m'
-IMG_SUM="$(md5sum -c $IMG_MD5)"
-if ! echo "$IMG_SUM" | grep 'OK' ; then
-	echo -e "\e[91mMD5值匹配失败 $IMG_SUM\e[0m"
-	exit 1
-fi
+echo -e "\e[92m校验原始镜像: $IMG\e[0m"
+md5sum -c -- "$IMG_MD5" || fail "原始镜像校验失败"
 
-echo -e '\e[92m开始写入 '$IMG' 到 '$DISK'\e[0m'
-dd if=$IMG of=/dev/$DISK conv=fsync status=progress
-echo -e '\e[92m写入结束，重启\e[0m'
+echo -e "\e[92m写入 $IMG 到 /dev/$DISK\e[0m"
+dd if="$IMG" of="/dev/$DISK" conv=fsync status=progress || fail "写盘失败"
+sync
+trap - EXIT
+echo -e "\e[92m写入成功，重启\e[0m"
 echo b > /proc/sysrq-trigger

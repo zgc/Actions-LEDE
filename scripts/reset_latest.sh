@@ -1,79 +1,93 @@
 #!/bin/bash
+set -euo pipefail
 
-# Source openwrt-device.conf
 [ -f /etc/openwrt-device.conf ] && . /etc/openwrt-device.conf
 
 IMG_DIR=${IMG_DIR:-/tmp}
-cd $IMG_DIR
-
 DISK=${DISK:-sda}
-GITHUB_REPO=${GITHUB_REPO:-"zgc/Actions-LEDE"}
-ARCH=`uname -m`
+GITHUB_REPO=${GITHUB_REPO:-zgc/Actions-LEDE}
+RELEASE_NAME=${RELEASE_NAME:-$(uname -m)}
+IMG_GZ="${RELEASE_NAME}.img.gz"
+IMG_GZ_MD5="${RELEASE_NAME}.img.gz.md5"
+IMG_MD5="${RELEASE_NAME}.img.md5"
+IMG="${RELEASE_NAME}.img"
+IMG_TMP="${IMG}.partial"
 
-get_latest_release() {
-	if [ -n "$GITHUB_OAUTH_TOKEN" ]; then
-		curl --retry 5 --header "Authorization: Bearer $GITHUB_OAUTH_TOKEN" --header "Accept: application/vnd.github+json" --silent "https://api.github.com/repos/$1/releases/latest"
+fail() {
+	echo -e "\e[91m$*\e[0m" >&2
+	exit 1
+}
+
+github_api() {
+	if [ -n "${GITHUB_OAUTH_TOKEN:-}" ]; then
+		curl --fail --retry 5 --silent --show-error \
+			--header "Authorization: Bearer $GITHUB_OAUTH_TOKEN" \
+			--header "Accept: application/vnd.github+json" "$1"
 	else
-		curl --retry 5 --header "Accept: application/vnd.github+json" --silent "https://api.github.com/repos/$1/releases/latest"
+		curl --fail --retry 5 --silent --show-error \
+			--header "Accept: application/vnd.github+json" "$1"
 	fi
 }
 
-get_latest_assets() {
-	if [ -n "$GITHUB_OAUTH_TOKEN" ]; then
-		curl --retry 5 -LJO -H "Authorization: token $GITHUB_OAUTH_TOKEN" -H 'Accept: application/octet-stream' "https://api.github.com/repos/$1/releases/assets/$2"
+asset_id_by_name() {
+	local wanted="$1" index name id
+	for index in $(seq 0 50); do
+		name=$(printf '%s' "$LATEST_RELEASE_JSON" | jsonfilter -e "@.assets[$index].name")
+		[ -n "$name" ] || break
+		if [ "$name" = "$wanted" ]; then
+			id=$(printf '%s' "$LATEST_RELEASE_JSON" | jsonfilter -e "@.assets[$index].id")
+			[ -n "$id" ] && printf '%s\n' "$id" && return 0
+		fi
+	done
+	return 1
+}
+
+download_asset() {
+	local asset_id="$1" output="$2"
+	if [ -n "${GITHUB_OAUTH_TOKEN:-}" ]; then
+		curl --fail --retry 5 --location --output "$output" \
+			--header "Authorization: Bearer $GITHUB_OAUTH_TOKEN" \
+			--header "Accept: application/octet-stream" \
+			"https://api.github.com/repos/$GITHUB_REPO/releases/assets/$asset_id"
 	else
-		curl --retry 5 -LJO -H 'Accept: application/octet-stream' "https://api.github.com/repos/$1/releases/assets/$2"
+		curl --fail --retry 5 --location --output "$output" \
+			--header "Accept: application/octet-stream" \
+			"https://api.github.com/repos/$GITHUB_REPO/releases/assets/$asset_id"
 	fi
 }
 
-echo -e '\e[92m开始获取 '$GITHUB_REPO' latest版本\e[0m'
-LATEST_RELEASE_JSON=`get_latest_release $GITHUB_REPO`
+cd "$IMG_DIR" || fail "无法进入镜像目录: $IMG_DIR"
+[ -b "/dev/$DISK" ] || fail "不是块设备: /dev/$DISK"
 
-TAG_NAME=$(echo $LATEST_RELEASE_JSON | jsonfilter -e  @.tag_name)
-IMG_GZ=$(echo $LATEST_RELEASE_JSON | jsonfilter -e  @.assets[1].name)
-IMG_GZ_ID=$(echo $LATEST_RELEASE_JSON | jsonfilter -e  @.assets[1].id)
-IMG_GZ_MD5=$(echo $LATEST_RELEASE_JSON | jsonfilter -e  @.assets[2].name)
-IMG_GZ_MD5_ID=$(echo $LATEST_RELEASE_JSON | jsonfilter -e  @.assets[2].id)
-IMG_MD5=$(echo $LATEST_RELEASE_JSON | jsonfilter -e  @.assets[3].name)
-IMG_MD5_ID=$(echo $LATEST_RELEASE_JSON | jsonfilter -e  @.assets[3].id)
-IMG=$(echo $LATEST_RELEASE_JSON | jsonfilter -e  @.assets[1].name | sed 's/\.[^.]*$//')
+echo -e "\e[92m获取 $GITHUB_REPO 最新 release\e[0m"
+LATEST_RELEASE_JSON=$(github_api "https://api.github.com/repos/$GITHUB_REPO/releases/latest") || fail "无法读取最新 release"
+TAG_NAME=$(printf '%s' "$LATEST_RELEASE_JSON" | jsonfilter -e '@.tag_name')
+[ -n "$TAG_NAME" ] || fail "latest release 缺少 tag_name"
 
-echo -e '\e[92m准备更新 '$TAG_NAME $ARCH' 到 '$DISK'\e[0m'
+IMG_GZ_ID=$(asset_id_by_name "$IMG_GZ") || fail "release 中缺少 $IMG_GZ"
+IMG_GZ_MD5_ID=$(asset_id_by_name "$IMG_GZ_MD5") || fail "release 中缺少 $IMG_GZ_MD5"
+IMG_MD5_ID=$(asset_id_by_name "$IMG_MD5") || fail "release 中缺少 $IMG_MD5"
 
-echo -e '\e[92m开始清理 '$IMG_GZ'\e[0m'
-[ -e $IMG_GZ ] && rm $IMG_GZ
-echo -e '\e[92m开始下载 '$IMG_GZ'\e[0m'
-get_latest_assets $GITHUB_REPO $IMG_GZ_ID
-echo -e '\e[92m开始清理 '$IMG_GZ_MD5'\e[0m'
-[ -e $IMG_GZ_MD5 ] && rm $IMG_GZ_MD5
-echo -e '\e[92m开始下载 '$IMG_GZ_MD5'\e[0m'
-get_latest_assets $GITHUB_REPO $IMG_GZ_MD5_ID
+echo -e "\e[92m下载 $TAG_NAME 的 $RELEASE_NAME 镜像\e[0m"
+rm -f -- "$IMG_GZ" "$IMG_GZ_MD5" "$IMG_MD5" "$IMG_TMP"
+download_asset "$IMG_GZ_ID" "$IMG_GZ"
+download_asset "$IMG_GZ_MD5_ID" "$IMG_GZ_MD5"
+download_asset "$IMG_MD5_ID" "$IMG_MD5"
 
-echo -e '\e[92m开始校验 '$IMG_GZ'\e[0m'
-GZ_SUM="$(md5sum -c "$IMG_GZ_MD5")"
-if ! echo "$GZ_SUM" | grep 'OK' ; then
-	echo -e "\e[91mMD5值匹配失败 $GZ_SUM\e[0m"
-	exit 1
-fi
+echo -e "\e[92m校验压缩镜像: $IMG_GZ\e[0m"
+md5sum -c -- "$IMG_GZ_MD5" || fail "压缩镜像校验失败"
 
-echo -e '\e[92m开始清理 '$IMG_MD5'\e[0m'
-[ -e $IMG_MD5 ] && rm $IMG_MD5
-echo -e '\e[92m开始下载 '$IMG_MD5'\e[0m'
-get_latest_assets $GITHUB_REPO $IMG_MD5_ID
+trap 'rm -f -- "$IMG_TMP"' EXIT
+echo -e "\e[92m解压镜像: $IMG_GZ\e[0m"
+gzip -dc -- "$IMG_GZ" > "$IMG_TMP" || fail "镜像解压失败"
+mv -f -- "$IMG_TMP" "$IMG"
 
-echo -e '\e[92m开始清理 '$IMG'\e[0m'
-[ -e $IMG ] && rm $IMG
-echo -e '\e[92m开始解压 '$IMG_GZ'\e[0m'
-gzip -d $IMG_GZ
+echo -e "\e[92m校验原始镜像: $IMG\e[0m"
+md5sum -c -- "$IMG_MD5" || fail "原始镜像校验失败"
 
-echo -e '\e[92m开始校验 '$IMG'\e[0m'
-IMG_SUM="$(md5sum -c "$IMG_MD5")"
-if ! echo "$IMG_SUM" | grep 'OK' ; then
-	echo -e "\e[91mMD5值匹配失败 $IMG_SUM\e[0m"
-	exit 1
-fi
-
-echo -e '\e[92m开始写入 '$IMG' 到 '$DISK'\e[0m'
-dd if=$IMG of=/dev/$DISK conv=fsync status=progress
-echo -e '\e[92m写入结束，重启\e[0m'
+echo -e "\e[92m写入 $IMG 到 /dev/$DISK\e[0m"
+dd if="$IMG" of="/dev/$DISK" conv=fsync status=progress || fail "写盘失败"
+sync
+trap - EXIT
+echo -e "\e[92m写入成功，重启\e[0m"
 echo b > /proc/sysrq-trigger

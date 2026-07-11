@@ -976,6 +976,9 @@ config ip-rule
 # ============================================================
 FW_DATE=$(date +%Y%m%d)
 FW_HASH=$(git -C "$GITHUB_WORKSPACE" rev-parse --short HEAD 2>/dev/null || echo "dev")
+if ! git -C "$GITHUB_WORKSPACE" diff --quiet --ignore-submodules --; then
+	FW_HASH="${FW_HASH}-dirty"
+fi
 FW_DEVICE=$(grep '^RELEASE_NAME=' "$GITHUB_WORKSPACE/openwrt-device.conf" 2>/dev/null | cut -d= -f2 | tr -d '"' || echo "unknown")
 cat > package/base-files/files/etc/firmware_version <<FWEOF
 VERSION=${FW_DATE}-${FW_HASH}
@@ -1169,16 +1172,3 @@ if [ -f ".config" ]; then
 		echo "Added CONFIG_PACKAGE_r8152-firmware=y to .config"
 	fi
 fi
-
-# ============================================================
-# RTL8157 firmware: Copy from repo (pre-downloaded, git-tracked)
-# ============================================================
-echo "Installing rtl8157-1.fw firmware..."
-mkdir -p "package/base-files/files/lib/firmware/rtl_nic"
-if [ -f "files/firmware/rtl_nic/rtl8157-1.fw" ]; then
-	cp "files/firmware/rtl_nic/rtl8157-1.fw" "package/base-files/files/lib/firmware/rtl_nic/"
-	echo "Installed rtl8157-1.fw firmware from repo"
-else
-	echo "WARNING: rtl8157-1.fw not found in files/"
-fi
-
