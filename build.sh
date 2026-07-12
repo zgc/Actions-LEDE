@@ -152,8 +152,8 @@ if ! GITHUB_WORKSPACE=$GITHUB_WORKSPACE BUILD_CACHE_DIR=$BUILD_CACHE_DIR $GITHUB
   echo "❌ diy-part1.sh failed"
   exit 1
 fi
-./scripts/feeds update -f -a
-./scripts/feeds install -a
+./scripts/feeds update -f -a || { echo "❌ feeds update failed"; exit 1; }
+./scripts/feeds install -a || { echo "❌ feeds install failed"; exit 1; }
 
 # Remove feeds symlinks that conflict with custom (emortal) packages
 # Ensures custom versions under package/emortal/ always win cleanly
@@ -180,7 +180,10 @@ popd
 chmod +x $DIY_P2_SH
 
 pushd openwrt
-GITHUB_WORKSPACE=$GITHUB_WORKSPACE $GITHUB_WORKSPACE/$DIY_P2_SH
+if ! GITHUB_WORKSPACE=$GITHUB_WORKSPACE $GITHUB_WORKSPACE/$DIY_P2_SH; then
+  echo "❌ diy-part2.sh failed"
+  exit 1
+fi
 make defconfig || { echo "❌ defconfig (post diy) failed"; exit 1; }
 
 # Prevent false-positive full rebuild due to defconfig timestamp change.
@@ -336,7 +339,7 @@ echo "✅ host tools installed"
 # feeds install symlinks: feeds/packages/lang/python/python3 -> package/feeds/packages/python3
 if ls package/feeds/packages/python3/Makefile 2>/dev/null; then
   echo "=== Pre-compiling python3 host tooling (for meson/apk) ==="
-  make package/feeds/packages/python3/host/compile -j1 V=s
+  make package/feeds/packages/python3/host/compile -j1 V=s || { echo "❌ python3 host build failed"; exit 1; }
   # Symlink python3 from hostpkg→host so meson cross-file can find it
   if [ -f staging_dir/hostpkg/bin/python3 ]; then
     ln -sf ../../hostpkg/bin/python3 staging_dir/host/bin/python3
@@ -357,10 +360,9 @@ for go_pkg in frp; do
   fi
   if [ -d "package/feeds/packages/$go_pkg" ]; then
     echo "Pre-compiling $go_pkg with -j1..."
-    make "package/feeds/packages/$go_pkg/compile" -j1 V=s
-    if [ $? -ne 0 ]; then
+    if ! make "package/feeds/packages/$go_pkg/compile" -j1 V=s; then
       echo "WARNING: $go_pkg failed, retrying..."
-      make "package/feeds/packages/$go_pkg/compile" -j1 V=s
+      make "package/feeds/packages/$go_pkg/compile" -j1 V=s || { echo "❌ $go_pkg failed after retry"; exit 1; }
     fi
   fi
 done
@@ -413,10 +415,10 @@ fi
 
 
 # Save expanded .config as config.buildinfo (NEVER overwrite config.seed — it's our input!)
-cp -f openwrt/.config config.buildinfo
+cp -f openwrt/.config config.buildinfo || { echo "❌ failed to save config.buildinfo"; exit 1; }
 echo "✅ Saved expanded config to config.buildinfo"
 
-mkdir -p "$RELEASE_DIR"
+mkdir -p "$RELEASE_DIR" || { echo "❌ failed to create release directory"; exit 1; }
 
 # Find the deepest firmware output directory under bin/targets
 FIRMWARE_DIR=$(find openwrt/bin/targets -type d -name "64" 2>/dev/null | head -1)
@@ -426,24 +428,29 @@ fi
 echo "📦 Firmware directory: $FIRMWARE_DIR"
 
 if [ -d "$FIRMWARE_DIR" ]; then
-  cp -f "$FIRMWARE_DIR"/config.buildinfo "$RELEASE_DIR/" 2>/dev/null || true
+  cp -f "$FIRMWARE_DIR"/config.buildinfo "$RELEASE_DIR/" || { echo "❌ missing target config.buildinfo"; exit 1; }
   # Find the combined/EFI firmware image (preferred) or any .img.gz
   FIRMWARE_FILE=$(find "$FIRMWARE_DIR" -maxdepth 1 -name "*combined*img.gz" -type f 2>/dev/null | head -1)
   if [ -z "$FIRMWARE_FILE" ]; then
     FIRMWARE_FILE=$(find "$FIRMWARE_DIR" -maxdepth 1 -name "*img.gz" -type f 2>/dev/null | head -1)
   fi
   if [ -n "$FIRMWARE_FILE" ] && [ -f "$FIRMWARE_FILE" ]; then
-    cp -f "$FIRMWARE_FILE" "$RELEASE_DIR/$RELEASE_NAME.img.gz"
+    cp -f "$FIRMWARE_FILE" "$RELEASE_DIR/$RELEASE_NAME.img.gz" || { echo "❌ failed to copy firmware image"; exit 1; }
     echo "✅ Firmware: $(basename "$FIRMWARE_FILE")"
   else
     echo "❌ No .img.gz found in $FIRMWARE_DIR!"
+    exit 1
   fi
   MANIFEST=$(find "$FIRMWARE_DIR" -maxdepth 1 -name "*.manifest" -type f 2>/dev/null | head -1)
   if [ -n "$MANIFEST" ] && [ -f "$MANIFEST" ]; then
-    cp -f "$MANIFEST" "$RELEASE_DIR/$RELEASE_NAME.manifest"
+    cp -f "$MANIFEST" "$RELEASE_DIR/$RELEASE_NAME.manifest" || { echo "❌ failed to copy manifest"; exit 1; }
+  else
+    echo "❌ No manifest found in $FIRMWARE_DIR!"
+    exit 1
   fi
 else
   echo "❌ Firmware directory not found!"
+  exit 1
 fi
 
 cd "$RELEASE_DIR" || exit 1
