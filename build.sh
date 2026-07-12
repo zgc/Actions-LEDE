@@ -166,6 +166,20 @@ for pkg_dir in package/emortal/*/; do
   done
 done
 
+# The PikuZheng SmartDNS service replaces the upstream package, whose package
+# metadata also claims luci-app-smartdns.  Keep one LuCI definition by copying
+# the current feed UI beside the custom service package before defconfig.
+if [ -d package/emortal/smartdns ]; then
+  if [ ! -d feeds/luci/applications/luci-app-smartdns ]; then
+    echo "❌ luci-app-smartdns source is missing from the LuCI feed"
+    exit 1
+  fi
+  rm -rf package/emortal/luci-app-smartdns
+  cp -a feeds/luci/applications/luci-app-smartdns package/emortal/luci-app-smartdns
+  rm -f package/feeds/luci/luci-app-smartdns
+  echo "✅ luci-app-smartdns: paired with custom SmartDNS"
+fi
+
 # ============================================================
 # Section 5: Config
 # ============================================================
