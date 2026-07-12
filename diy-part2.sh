@@ -37,7 +37,7 @@ sed -i "s/\$(TOPDIR)\/luci.mk/\$(TOPDIR)\/feeds\/luci\/luci.mk/g" feeds/luci/the
 
 
 for script in check_smartdns_connect.sh check_openclash_connect.sh check_wan_connect.sh \
-							reset_get_img.sh reset_latest.sh reset_offline.sh reset_upload.sh; do
+							reset_latest.sh reset_offline.sh reset_upload.sh; do
 	cp "$GITHUB_WORKSPACE/scripts/$script" package/base-files/files/etc/
 	chmod +x "package/base-files/files/etc/$script"
 done
