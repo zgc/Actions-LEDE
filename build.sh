@@ -13,6 +13,9 @@
 # ============================================================
 
 GITHUB_WORKSPACE=$(cd $(dirname $0);pwd)
+# Docker bind mounts are owned by the host user while the builder runs as root.
+# Configure the concrete workspace before the reproducibility Git check below.
+git config --global --add safe.directory "$GITHUB_WORKSPACE"
 # A firmware must be reproducible from a committed source tree.  Device
 # repositories frequently contain local experiments, and building from one
 # makes the resulting image impossible to audit or reproduce.
@@ -23,8 +26,6 @@ fi
 # Source device-specific overrides
 [ -f "$GITHUB_WORKSPACE/openwrt-device.conf" ] && source "$GITHUB_WORKSPACE/openwrt-device.conf"
 
-# Fix: Docker container git detects root-owned repo, refuses operations
-git config --global --add safe.directory '*'
 # Fix: Docker image now has git compiled against OpenSSL (not GnuTLS)
 # TLS workarounds no longer needed — keep postBuffer as safety net
 git config --global http.postBuffer 524288000
