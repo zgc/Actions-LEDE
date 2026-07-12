@@ -458,6 +458,22 @@ if [ -d "$FIRMWARE_DIR" ]; then
   MANIFEST=$(find "$FIRMWARE_DIR" -maxdepth 1 -name "*.manifest" -type f 2>/dev/null | head -1)
   if [ -n "$MANIFEST" ] && [ -f "$MANIFEST" ]; then
     cp -f "$MANIFEST" "$RELEASE_DIR/$RELEASE_NAME.manifest" || { echo "❌ failed to copy manifest"; exit 1; }
+
+    # A successful image build is not sufficient: selected LuCI applications
+    # and their supporting services must be present in the target manifest.
+    # This prevents flashing an image that silently lost a Web UI package.
+    missing_packages=""
+    required_packages="$(sed -n 's/^CONFIG_PACKAGE_\(luci-app-[A-Za-z0-9_-]*\)=y$/\1/p' "$CONFIG_FILE") smartdns smartdns-ui snmpd-ssl wget-ssl"
+    for package in $required_packages; do
+      if ! grep -q "^$package - " "$MANIFEST"; then
+        missing_packages="$missing_packages $package"
+      fi
+    done
+    if [ -n "$missing_packages" ]; then
+      echo "❌ firmware manifest is missing selected packages:$missing_packages"
+      exit 1
+    fi
+    echo "✅ firmware manifest contains selected LuCI and service packages"
   else
     echo "❌ No manifest found in $FIRMWARE_DIR!"
     exit 1
