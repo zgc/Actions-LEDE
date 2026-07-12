@@ -236,6 +236,7 @@ jobs:
           test -d feeds/luci/applications/luci-app-smartdns
           rm -rf package/emortal/luci-app-smartdns
           cp -a feeds/luci/applications/luci-app-smartdns package/emortal/luci-app-smartdns
+          sed -i 's|include ../../luci.mk|include $(TOPDIR)/feeds/luci/luci.mk|' package/emortal/luci-app-smartdns/Makefile
           rm -f package/feeds/luci/luci-app-smartdns
         fi
 

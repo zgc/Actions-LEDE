@@ -176,6 +176,10 @@ if [ -d package/emortal/smartdns ]; then
   fi
   rm -rf package/emortal/luci-app-smartdns
   cp -a feeds/luci/applications/luci-app-smartdns package/emortal/luci-app-smartdns
+  # The feed package uses a relative include path.  It becomes invalid after
+  # relocating the package under package/emortal, so make it buildroot-relative.
+  sed -i 's|include ../../luci.mk|include $(TOPDIR)/feeds/luci/luci.mk|' \
+    package/emortal/luci-app-smartdns/Makefile
   rm -f package/feeds/luci/luci-app-smartdns
   echo "✅ luci-app-smartdns: paired with custom SmartDNS"
 fi
@@ -322,8 +326,14 @@ fi
 # Section 8: Download
 # ============================================================
 
-# Drop caches to free memory before compilation (prevents OOM in Docker)
-sync; echo 3 > /proc/sys/vm/drop_caches 2>/dev/null || true
+# Drop caches when the kernel permits it. Docker commonly mounts this sysctl
+# read-only, so suppress that expected host-policy failure.
+sync
+if { echo 3 > /proc/sys/vm/drop_caches; } 2>/dev/null; then
+  echo "✅ dropped filesystem caches"
+else
+  echo "ℹ️ cache drop skipped (not permitted by container runtime)"
+fi
 
 make download -j8 || make download -j1 V=s || { echo "❌ make download failed"; exit 1; }
 find dl -not -path "dl/go-mod-cache/*" -size -1024c -type f -exec rm -f {} \;
