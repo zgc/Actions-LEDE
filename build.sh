@@ -194,6 +194,7 @@ make defconfig || { echo "❌ defconfig failed"; exit 1; }
 popd
 
 [ -e $GITHUB_WORKSPACE/files ] && cp -r $GITHUB_WORKSPACE/files openwrt/files
+[ -f openwrt/files/etc/smartdns/ui/smartdns.db ] && chmod 600 openwrt/files/etc/smartdns/ui/smartdns.db
 [ -e $GITHUB_WORKSPACE/$CONFIG_FILE ] && cp $GITHUB_WORKSPACE/$CONFIG_FILE openwrt/.config
 chmod +x $DIY_P2_SH
 
