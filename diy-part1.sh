@@ -169,6 +169,14 @@ if [ -n "$SM_VERSION" ]; then
   fi
 fi
 
+# smartdns-ui is selected by config.seed. Do not produce a package that merely
+# exists in the manifest while its shared object or web assets are absent.
+if [ ! -f "$_sm_ui_tmp/usr/lib/smartdns_ui.so" ] || \
+   [ ! -d "$_sm_ui_tmp/usr/share/smartdns/wwwroot" ]; then
+  echo "❌ smartdns-ui assets are incomplete; refusing to build an empty UI package"
+  exit 1
+fi
+
 # Sanitize version: apk mkpkg rejects 'v' prefix in version components (e.g. .v48)
 SM_VERSION="$(echo "$SM_VERSION" | sed 's/\.v\([0-9]\)/.\1/g')"
 
@@ -289,7 +297,8 @@ define Build/Compile
 		cp -f $(PKG_BUILD_DIR)/smartdns-ui-data/usr/lib/smartdns_ui.so $(PKG_BUILD_DIR)/usr/lib/; \
 		cp -rf $(PKG_BUILD_DIR)/smartdns-ui-data/usr/share/smartdns/wwwroot $(PKG_BUILD_DIR)/usr/share/smartdns/; \
 	else \
-		echo "⚠️ smartdns-ui: pre-built data not found in smartdns-ui-data/"; \
+		echo "❌ smartdns-ui: pre-built data not found in smartdns-ui-data/"; \
+		exit 1; \
 	fi
 endef
 
