@@ -405,10 +405,15 @@ rm -rf build_dir/target-x86_64_musl/linux-x86_64/target-dir-*
 
 echo "=== Stale squashfs/target-dir cleaned ==="
 
-# Free memory before main build to prevent OOM
-sync; echo 3 > /proc/sys/vm/drop_caches 2>/dev/null || true
+# Free memory before main build when the container runtime permits it.
+sync
+if { echo 3 > /proc/sys/vm/drop_caches; } 2>/dev/null; then
+  echo "✅ dropped filesystem caches before main build"
+else
+  echo "ℹ️ cache drop skipped before main build (not permitted by container runtime)"
+fi
 
-echo "=== Memory caches dropped, starting main build ==="
+echo "=== Starting main build ==="
 
 make -j$(nproc) V=s
 BUILD_RC=$?
