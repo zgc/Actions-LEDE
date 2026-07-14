@@ -18,6 +18,28 @@ fail() {
 	exit 1
 }
 
+verify_written_image() {
+	local img_size full_blocks tail_bytes source_md5 disk_md5
+
+	img_size=$(wc -c < "$IMG")
+	full_blocks=$((img_size / 1048576))
+	tail_bytes=$((img_size % 1048576))
+	echo -e "\e[92m读回校验 /dev/$DISK（${img_size} bytes）\e[0m"
+	source_md5=$(md5sum "$IMG" | awk '{print $1}')
+	disk_md5=$(
+		{
+			[ "$full_blocks" -eq 0 ] || dd if="/dev/$DISK" bs=1M count="$full_blocks" status=none
+			[ "$tail_bytes" -eq 0 ] || dd if="/dev/$DISK" bs=1 skip="$((full_blocks * 1048576))" count="$tail_bytes" status=none
+		} | md5sum | awk '{print $1}'
+	)
+	if [ "$source_md5" != "$disk_md5" ]; then
+		echo -e "\e[91m写盘后读回校验失败: image=$source_md5 disk=$disk_md5\e[0m" >&2
+		echo -e "\e[91m保留镜像且不重启；请保存以下块设备相关日志。\e[0m" >&2
+		dmesg | grep -Ei 'nvme|I/O error|buffer I/O|blk_update|reset|timeout' | tail -n 120 >&2 || true
+		return 1
+	fi
+}
+
 github_api() {
 	if [ -n "${GITHUB_OAUTH_TOKEN:-}" ]; then
 		curl --fail --retry 5 --silent --show-error \
@@ -88,6 +110,8 @@ md5sum -c -- "$IMG_MD5" || fail "原始镜像校验失败"
 echo -e "\e[92m写入 $IMG 到 /dev/$DISK\e[0m"
 dd if="$IMG" of="/dev/$DISK" conv=fsync status=progress || fail "写盘失败"
 sync
+verify_written_image || fail "写盘后读回校验失败"
+
 trap - EXIT
 echo -e "\e[92m写入成功，重启\e[0m"
 echo b > /proc/sysrq-trigger

@@ -282,15 +282,20 @@ ZT_VER_TARGET="1.16.2"
 if [ -f $ZT_FEED/Makefile ]; then
   ZT_VER_CURRENT=$(grep '^PKG_VERSION:=' "$ZT_FEED/Makefile" | head -1 | cut -d= -f2)
   if [ "$ZT_VER_CURRENT" != "$ZT_VER_TARGET" ]; then
-    sed -i "s/^PKG_VERSION:=$ZT_VER_CURRENT/PKG_VERSION:=$ZT_VER_TARGET/" $ZT_FEED/Makefile
-    # Download and compute correct hash for target version
-    ZT_HASH=$(curl -sL "https://codeload.github.com/zerotier/ZeroTierOne/tar.gz/$ZT_VER_TARGET" | sha256sum | awk '{print $1}')
-    if [ -n "$ZT_HASH" ] && [ ${#ZT_HASH} -eq 64 ]; then
+    # Update version and hash atomically. A failed HTTP request must not leave
+    # a new version paired with the old source hash.
+    ZT_HASH=""
+    if ZT_HASH=$(curl --fail --retry 3 --retry-delay 2 --silent --show-error -L "https://codeload.github.com/zerotier/ZeroTierOne/tar.gz/$ZT_VER_TARGET" | sha256sum | awk '{print $1}'); then
+      case "$ZT_HASH" in
+      ''|*[!0-9a-f]*) ZT_HASH="" ;;
+      esac
+    fi
+    if [ "${#ZT_HASH}" -eq 64 ]; then
+      sed -i "s/^PKG_VERSION:=$ZT_VER_CURRENT/PKG_VERSION:=$ZT_VER_TARGET/" $ZT_FEED/Makefile
       sed -i "s/^PKG_HASH:=.*/PKG_HASH:=$ZT_HASH/" $ZT_FEED/Makefile
       echo "✅ zerotier bumped $ZT_VER_CURRENT → $ZT_VER_TARGET (hash: ${ZT_HASH:0:12}...)"
     else
-      echo "⚠️ zerotier hash compute failed, reverting version"
-      sed -i "s/^PKG_VERSION:=$ZT_VER_TARGET/PKG_VERSION:=$ZT_VER_CURRENT/" $ZT_FEED/Makefile
+      echo "⚠️ zerotier source verification failed; keeping $ZT_VER_CURRENT unchanged"
     fi
   else
     echo "✅ zerotier already at $ZT_VER_TARGET"

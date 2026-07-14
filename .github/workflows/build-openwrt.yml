@@ -254,13 +254,22 @@ jobs:
         # Bump zerotier to 1.16.2 (feeds has 1.16.0, 1.16.2 supports moon natively)
         ZT_FEED=feeds/packages/net/zerotier
         if [ -f $ZT_FEED/Makefile ]; then
-          sed -i 's/PKG_VERSION:=1.16.0/PKG_VERSION:=1.16.2/' $ZT_FEED/Makefile
-          ZT_HASH=$(curl -sL "https://codeload.github.com/zerotier/ZeroTierOne/tar.gz/1.16.2" | sha256sum | awk '{print $1}')
-          if [ -n "$ZT_HASH" ] && [ ${#ZT_HASH} -eq 64 ]; then
+          ZT_VER_TARGET="1.16.2"
+          ZT_VER_CURRENT=$(grep '^PKG_VERSION:=' "$ZT_FEED/Makefile" | head -1 | cut -d= -f2)
+          ZT_HASH=""
+          if [ "$ZT_VER_CURRENT" != "$ZT_VER_TARGET" ] && ZT_HASH=$(curl --fail --retry 3 --retry-delay 2 --silent --show-error -L "https://codeload.github.com/zerotier/ZeroTierOne/tar.gz/$ZT_VER_TARGET" | sha256sum | awk '{print $1}'); then
+            case "$ZT_HASH" in
+            ''|*[!0-9a-f]*) ZT_HASH="" ;;
+            esac
+          fi
+          if [ "$ZT_VER_CURRENT" = "$ZT_VER_TARGET" ]; then
+            echo "✅ zerotier already at $ZT_VER_TARGET"
+          elif [ "${#ZT_HASH}" -eq 64 ]; then
+            sed -i "s/^PKG_VERSION:=$ZT_VER_CURRENT/PKG_VERSION:=$ZT_VER_TARGET/" $ZT_FEED/Makefile
             sed -i "s/^PKG_HASH:=.*/PKG_HASH:=$ZT_HASH/" $ZT_FEED/Makefile
-            echo "✅ zerotier bumped to 1.16.2 (hash: ${ZT_HASH:0:12}...)"
+            echo "✅ zerotier bumped $ZT_VER_CURRENT → $ZT_VER_TARGET (hash: ${ZT_HASH:0:12}...)"
           else
-            echo "⚠️ zerotier hash compute failed, keeping original"
+            echo "⚠️ zerotier source verification failed; keeping $ZT_VER_CURRENT unchanged"
           fi
           # Enable config_path for persistent zerotier data (identity, moon, networks)
           ZT_CONF=$ZT_FEED/files/etc/config/zerotier

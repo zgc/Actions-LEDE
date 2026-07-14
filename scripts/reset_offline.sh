@@ -21,6 +21,28 @@ fail() {
 	exit 1
 }
 
+verify_written_image() {
+	local img_size full_blocks tail_bytes source_md5 disk_md5
+
+	img_size=$(wc -c < "$IMG")
+	full_blocks=$((img_size / 1048576))
+	tail_bytes=$((img_size % 1048576))
+	echo -e "\e[92m读回校验 /dev/$DISK（${img_size} bytes）\e[0m"
+	source_md5=$(md5sum "$IMG" | awk '{print $1}')
+	disk_md5=$(
+		{
+			[ "$full_blocks" -eq 0 ] || dd if="/dev/$DISK" bs=1M count="$full_blocks" status=none
+			[ "$tail_bytes" -eq 0 ] || dd if="/dev/$DISK" bs=1 skip="$((full_blocks * 1048576))" count="$tail_bytes" status=none
+		} | md5sum | awk '{print $1}'
+	)
+	if [ "$source_md5" != "$disk_md5" ]; then
+		echo -e "\e[91m写盘后读回校验失败: image=$source_md5 disk=$disk_md5\e[0m" >&2
+		echo -e "\e[91m保留镜像且不重启；请保存以下块设备相关日志。\e[0m" >&2
+		dmesg | grep -Ei 'nvme|I/O error|buffer I/O|blk_update|reset|timeout' | tail -n 120 >&2 || true
+		return 1
+	fi
+}
+
 cd "$IMG_DIR" || fail "无法进入镜像目录: $IMG_DIR"
 [ -b "/dev/$DISK" ] || fail "不是块设备: /dev/$DISK"
 [ -f "$IMG_GZ" ] || fail "镜像不存在: $IMG_GZ"
@@ -45,9 +67,7 @@ sync
 
 # A successful write syscall does not prove that the target media contains the
 # image. Compare exactly the image length before rebooting.
-IMG_SIZE=$(wc -c < "$IMG")
-echo -e "\e[92m读回校验 /dev/$DISK（${IMG_SIZE} bytes）\e[0m"
-cmp -n "$IMG_SIZE" "$IMG" "/dev/$DISK" || fail "写盘后读回校验失败"
+verify_written_image || fail "写盘后读回校验失败"
 
 trap - EXIT
 echo -e "\e[92m写入成功，重启\e[0m"
