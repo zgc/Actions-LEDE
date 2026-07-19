@@ -34,23 +34,28 @@ cache_clone() {
 
   rm -rf "$target"
 
-  if [ -n "$sparse" ]; then
-    local tmpdir="/tmp/cache-${name}"
-    rm -rf "$tmpdir" && mkdir -p "$tmpdir"
-    if git clone --depth 1 -b "$branch" --filter=blob:none --sparse \
-         "$url" --no-checkout "$tmpdir" 2>/dev/null; then
-      (cd "$tmpdir" && git sparse-checkout init --cone \
-        && git sparse-checkout set "$sparse" \
-        && git checkout)
-      mv "${tmpdir}/${sparse}" "$target"
+  for attempt in 1 2 3; do
+    if [ -n "$sparse" ]; then
+      local tmpdir="/tmp/cache-${name}"
+      rm -rf "$tmpdir" && mkdir -p "$tmpdir"
+      if git clone --depth 1 -b "$branch" --filter=blob:none --sparse \
+           "$url" --no-checkout "$tmpdir" && \
+         (cd "$tmpdir" && git sparse-checkout init --cone \
+           && git sparse-checkout set "$sparse" \
+           && git checkout) && \
+         mv "${tmpdir}/${sparse}" "$target"; then
+        rm -rf "$tmpdir"
+        ok=true
+        break
+      fi
       rm -rf "$tmpdir"
+    elif git clone --depth 1 -b "$branch" "$url" "$target"; then
       ok=true
+      break
     fi
-  else
-    if git clone --depth 1 -b "$branch" "$url" "$target" 2>/dev/null; then
-      ok=true
-    fi
-  fi
+    rm -rf "$target"
+    [ "$attempt" -lt 3 ] && echo "WARNING: ${name} clone attempt ${attempt} failed; retrying..." && sleep 2
+  done
 
   if $ok; then
     echo "✅ ${name}: cloned from GitHub"
@@ -60,9 +65,12 @@ cache_clone() {
       cp -r "$target" "$cache"
       echo "✅ ${name}: cache updated"
     fi
-  elif [ -n "$BUILD_CACHE_DIR" ] && [ -d "$cache" ]; then
-    echo "⚠️ ${name}: GitHub clone failed, using local build-cache"
+  elif [ -n "$BUILD_CACHE_DIR" ] && [ -d "$cache" ] && [ "${ALLOW_STALE_SOURCE_CACHE:-0}" = "1" ]; then
+    echo "⚠️ ${name}: GitHub clone failed, using explicitly allowed local build-cache"
     cp -r "$cache" "$target"
+  elif [ -n "$BUILD_CACHE_DIR" ] && [ -d "$cache" ]; then
+    echo "❌ ${name}: GitHub clone failed; refusing stale build-cache (set ALLOW_STALE_SOURCE_CACHE=1 to opt in)"
+    exit 1
   else
     echo "❌ ${name}: both GitHub clone and local cache failed"
     exit 1
@@ -311,10 +319,6 @@ echo "✅ smartdns: generated OpenWrt package Makefile"
 # luci-app-smartdns 使用 ImmortalWrt feed 版本，此处不重复生成
 echo "✅ smartdns: ready"
 
-
-# 5. zerotier — GitHub regenerated tarball hash (updated 2026-06-15)
-#    Upstream now has e3b0c44... (empty hash), fix to actual tarball hash
-sed -i 's|PKG_HASH:=e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855|PKG_HASH:=2c607f573c6e38815433af289d364a689a203b18b51125f06c4472014d0657f0|' feeds/packages/net/zerotier/Makefile
 
 # 6. OpenClash Ruby 4.0 + Psych YAML 兼容性修复
 #    ImmortalWrt Ruby 4.0 的 Psych YAML 库需要显式 require stringio

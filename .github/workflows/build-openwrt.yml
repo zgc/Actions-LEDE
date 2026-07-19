@@ -111,6 +111,9 @@ jobs:
             echo "RELEASE_NAME=$RELEASE_NAME" >> $GITHUB_ENV
             echo "✅ Device: $RELEASE_NAME"
           fi
+          if [ -n "${ZEROTIER_VERSION:-}" ]; then
+            echo "ZEROTIER_VERSION=$ZEROTIER_VERSION" >> $GITHUB_ENV
+          fi
         else
           echo "No openwrt-device.conf found, using default RELEASE_NAME"
         fi
@@ -251,11 +254,21 @@ jobs:
           sed -i 's/\t--disable-ml$/\t--disable-ml \\\n\t--disable-cloud/' "$NETDATA_FEED/Makefile"
           echo "✅ netdata: --disable-cloud added"
         fi
-        # Bump zerotier to 1.16.2 (feeds has 1.16.0, 1.16.2 supports moon natively)
+        # Use the latest stable ZeroTier release unless ZEROTIER_VERSION pins one.
         ZT_FEED=feeds/packages/net/zerotier
         if [ -f $ZT_FEED/Makefile ]; then
-          ZT_VER_TARGET="1.16.2"
           ZT_VER_CURRENT=$(grep '^PKG_VERSION:=' "$ZT_FEED/Makefile" | head -1 | cut -d= -f2)
+          ZT_VER_TARGET="${ZEROTIER_VERSION:-latest}"
+          if [ "$ZT_VER_TARGET" = "latest" ]; then
+            ZT_VER_TARGET=$(curl --fail --retry 3 --retry-delay 2 --silent --show-error https://api.github.com/repos/zerotier/ZeroTierOne/releases/latest | python3 -c 'import json, sys; print(json.load(sys.stdin).get("tag_name", "").lstrip("v"))' 2>/dev/null)
+          fi
+          case "$ZT_VER_TARGET" in
+            [0-9]*.[0-9]*.[0-9]*) ;;
+            *)
+              echo "WARNING: zerotier release lookup failed; keeping $ZT_VER_CURRENT"
+              ZT_VER_TARGET="$ZT_VER_CURRENT"
+              ;;
+          esac
           ZT_HASH=""
           if [ "$ZT_VER_CURRENT" != "$ZT_VER_TARGET" ] && ZT_HASH=$(curl --fail --retry 3 --retry-delay 2 --silent --show-error -L "https://codeload.github.com/zerotier/ZeroTierOne/tar.gz/$ZT_VER_TARGET" | sha256sum | awk '{print $1}'); then
             case "$ZT_HASH" in
@@ -267,7 +280,7 @@ jobs:
           elif [ "${#ZT_HASH}" -eq 64 ]; then
             sed -i "s/^PKG_VERSION:=$ZT_VER_CURRENT/PKG_VERSION:=$ZT_VER_TARGET/" $ZT_FEED/Makefile
             sed -i "s/^PKG_HASH:=.*/PKG_HASH:=$ZT_HASH/" $ZT_FEED/Makefile
-            echo "✅ zerotier bumped $ZT_VER_CURRENT → $ZT_VER_TARGET (hash: ${ZT_HASH:0:12}...)"
+            echo "✅ zerotier updated $ZT_VER_CURRENT → $ZT_VER_TARGET (hash: ${ZT_HASH:0:12}...)"
           else
             echo "⚠️ zerotier source verification failed; keeping $ZT_VER_CURRENT unchanged"
           fi
@@ -354,7 +367,7 @@ jobs:
             *)          pkg_target="$go_pkg" ;;
           esac
           if grep -q "CONFIG_PACKAGE_luci-app-${pkg_target}=y\|CONFIG_PACKAGE_${pkg_target}=y" .config 2>/dev/null; then
-            ( echo "=== Pre-compiling $go_pkg (target: $pkg_target) ===" && \
+            ( set -o pipefail; echo "=== Pre-compiling $go_pkg (target: $pkg_target) ===" && \
               make package/$pkg_target/compile -j1 V=s 2>&1 | tail -5 && \
               echo "✅ $go_pkg done" ) &
           fi
@@ -363,8 +376,11 @@ jobs:
         echo -e "$(nproc) thread compile (load-limited)"
         # Main build: -jN for parallelism, -lN to avoid oversubscription
         # Retry: first pass with -j$(nproc), fallback to -j1 V=s for error visibility
-        make -j$(nproc) -l$(nproc) 2>&1 | tail -20 || \
-          make -j1 V=s 2>&1 | tail -40
+        set -o pipefail
+        if ! make -j$(nproc) -l$(nproc) 2>&1 | tail -20; then
+          echo "::warning::parallel build failed; retrying serially"
+          make -j1 V=s 2>&1 | tail -40 || exit 1
+        fi
 
         # Wait for background Go compiles
         wait
@@ -390,25 +406,39 @@ jobs:
       id: organize
       if: env.UPLOAD_FIRMWARE == 'true' && !cancelled()
       run: |
-        cd openwrt/bin/targets/*/*
-        MANIFEST=$(find . -maxdepth 1 -name '*.manifest' -type f | head -1)
-        test -n "$MANIFEST" && test -f "$MANIFEST"
+        set -euo pipefail
+        mapfile -t target_dirs < <(find openwrt/bin/targets -mindepth 2 -maxdepth 2 -type d ! -name packages)
+        [ "${#target_dirs[@]}" -eq 1 ] || { echo "::error::expected exactly one target directory"; exit 1; }
+        TARGET_DIR="${target_dirs[0]}"
+        mapfile -t manifests < <(find "$TARGET_DIR" -maxdepth 1 -name '*.manifest' -type f)
+        [ "${#manifests[@]}" -eq 1 ] || { echo "::error::expected exactly one manifest"; exit 1; }
+        MANIFEST="${manifests[0]}"
+        check_dir=$(mktemp -d)
+        trap 'rm -rf "$check_dir"' EXIT
+        awk '/^Package: / { print $2 }' "$GITHUB_WORKSPACE/openwrt/tmp/.packageinfo" | sort -u > "$check_dir/buildable"
+        sed -n 's/^CONFIG_PACKAGE_\([A-Za-z0-9_-]*\)=y$/\1/p' "$GITHUB_WORKSPACE/openwrt/.config" | sort -u > "$check_dir/selected"
+        awk -F ' - ' 'NF >= 2 { print $1 }' "$MANIFEST" | sort -u > "$check_dir/manifest"
+        test -s "$check_dir/buildable" && test -s "$check_dir/selected" && test -s "$check_dir/manifest" || { echo "::error::manifest validation input is empty"; exit 1; }
         missing_packages=""
-        required_packages="$(sed -n 's/^CONFIG_PACKAGE_\(luci-app-[A-Za-z0-9_-]*\)=y$/\1/p' $GITHUB_WORKSPACE/openwrt/.config) smartdns smartdns-ui snmpd-ssl wget-ssl"
-        for package in $required_packages; do
-          grep -q "^$package - " "$MANIFEST" || missing_packages="$missing_packages $package"
-        done
+        while IFS= read -r package; do
+          grep -Fqx "$package" "$check_dir/manifest" || grep -Eq "^${package}([0-9]+([.-][0-9]+)*|-[0-9]+)$" "$check_dir/manifest" || missing_packages="$missing_packages $package"
+        done < <(comm -12 "$check_dir/selected" "$check_dir/buildable")
         if [ -n "$missing_packages" ]; then
           echo "::error::firmware manifest is missing selected packages:$missing_packages"
           exit 1
         fi
-        echo "Firmware manifest contains selected LuCI and service packages"
-        rm -rf packages
+        echo "Firmware manifest contains every selected package"
+        mapfile -t images < <(find "$TARGET_DIR" -maxdepth 1 -name '*combined*img.gz' -type f)
+        if [ "${#images[@]}" -eq 0 ]; then mapfile -t images < <(find "$TARGET_DIR" -maxdepth 1 -name '*img.gz' -type f); fi
+        [ "${#images[@]}" -eq 1 ] || { echo "::error::expected exactly one firmware image"; exit 1; }
         mkdir -p $GITHUB_WORKSPACE/release
-        mv config.buildinfo $GITHUB_WORKSPACE/release/
-        mv $(ls -1 ./*img.gz | head -1) $GITHUB_WORKSPACE/release/$DEVICE_NAME.img.gz
-        cd $GITHUB_WORKSPACE/release/ && md5sum $DEVICE_NAME.img.gz > $DEVICE_NAME.img.gz.md5
-        gzip -dc $DEVICE_NAME.img.gz | md5sum | sed "s/-/$DEVICE_NAME.img/" > $DEVICE_NAME.img.md5
+        cp "$GITHUB_WORKSPACE/openwrt/.config" "$GITHUB_WORKSPACE/release/config.buildinfo"
+        cp "$TARGET_DIR/config.buildinfo" "$GITHUB_WORKSPACE/release/${DEVICE_NAME}.target.config.buildinfo"
+        cp "${images[0]}" "$GITHUB_WORKSPACE/release/$DEVICE_NAME.img.gz"
+        cd $GITHUB_WORKSPACE/release/
+        gzip -t "$DEVICE_NAME.img.gz"
+        md5sum "$DEVICE_NAME.img.gz" > "$DEVICE_NAME.img.gz.md5"
+        gzip -dc "$DEVICE_NAME.img.gz" | md5sum | sed "s/-/$DEVICE_NAME.img/" > "$DEVICE_NAME.img.md5"
         echo "FIRMWARE=$GITHUB_WORKSPACE/release" >> $GITHUB_ENV
         echo "status=success" >> $GITHUB_OUTPUT
 

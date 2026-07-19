@@ -18,6 +18,31 @@ Arch="amd64"
 CPU_MODEL="${Arch}-v3"
 CLASH_META_REPOS_VERNESONG=${CLASH_META_REPOS_VERNESONG:-true}
 
+download_required() {
+	local url="$1" destination="$2" label="$3"
+	curl --fail --show-error --retry 5 --retry-delay 2 -L "$url" -o "$destination" || {
+		echo "❌ $label download failed"
+		exit 1
+	}
+	[ -s "$destination" ] || { echo "❌ $label is empty"; exit 1; }
+}
+
+install_mihomo_latest() {
+	local destination="$1" version asset archive
+	version="$(curl --fail --show-error --retry 5 -L https://api.github.com/repos/MetaCubeX/mihomo/releases/latest 2>/dev/null | grep -E 'tag_name' | grep -E 'v[0-9.]+' -o 2>/dev/null)"
+	[ -n "$version" ] || { echo "❌ Mihomo latest version lookup failed"; return 1; }
+	asset="mihomo-linux-${CPU_MODEL}-${version}.gz"
+	archive="$destination/$asset"
+	if ! curl --fail --show-error --retry 5 --retry-delay 2 -L "https://github.com/MetaCubeX/mihomo/releases/download/${version}/${asset}" -o "$archive" || [ ! -s "$archive" ]; then
+		asset="mihomo-linux-${Arch}-${version}.gz"
+		archive="$destination/$asset"
+		curl --fail --show-error --retry 5 --retry-delay 2 -L "https://github.com/MetaCubeX/mihomo/releases/download/${version}/${asset}" -o "$archive" || return 1
+	fi
+	gzip -df "$archive" || return 1
+	[ -f "${archive%.gz}" ] || return 1
+	install -m 0755 "${archive%.gz}" package/emortal/luci-app-openclash/root/etc/openclash/core/clash_meta
+}
+
 # ============================================================
 # Dropbear: remove DirectInterface 'lan' restriction (SSH on all interfaces)
 # ============================================================
@@ -31,7 +56,14 @@ sed -i \
 	package/network/services/dropbear/files/dropbear.config
 
 rm -rf feeds/luci/themes/luci-theme-argon
-git clone --depth 1 -b $LUCI_BRANCH https://github.com/jerrykuku/luci-theme-argon.git feeds/luci/themes/luci-theme-argon
+git clone --depth 1 -b "$LUCI_BRANCH" https://github.com/jerrykuku/luci-theme-argon.git feeds/luci/themes/luci-theme-argon || {
+	echo "❌ luci-theme-argon clone failed"
+	exit 1
+}
+[ -f feeds/luci/themes/luci-theme-argon/Makefile ] || {
+	echo "❌ luci-theme-argon Makefile is missing after clone"
+	exit 1
+}
 sed -i "s/\$(TOPDIR)\/luci.mk/\$(TOPDIR)\/feeds\/luci\/luci.mk/g" feeds/luci/themes/luci-theme-argon/Makefile
 
 
@@ -52,6 +84,8 @@ sed -i '/commit luci/i\set luci.main.mediaurlbase="/luci-static/argon"' package/
 sed -i '/^exit 0$/i uci set firewall.@defaults[0].flow_offloading="1"' package/emortal/default-settings/files/99-default-settings
 sed -i '/^exit 0$/i uci set firewall.@zone[1].fullcone="1"' package/emortal/default-settings/files/99-default-settings
 sed -i '/^exit 0$/i uci commit firewall' package/emortal/default-settings/files/99-default-settings
+sed -i '/^exit 0$/i sysctl -qw net.ipv4.tcp_congestion_control=bbr || true' package/emortal/default-settings/files/99-default-settings
+sed -i '/^exit 0$/i grep -qxF "net.ipv4.tcp_congestion_control=bbr" /etc/sysctl.conf || echo "net.ipv4.tcp_congestion_control=bbr" >> /etc/sysctl.conf' package/emortal/default-settings/files/99-default-settings
 
 sed -i "s/uci -q set openclash.config.enable=0/uci -q set openclash.config.enable=\$(cat \/etc\/config\/openclash | grep -m 1 \"option enable\" | cut -d: -f2 | awk '{ print \$3}' | cut -d \"'\" -f 2)/g" package/emortal/luci-app-openclash/root/etc/uci-defaults/luci-openclash
 
@@ -773,17 +807,23 @@ config rule_providers
 ' >package/emortal/luci-app-openclash/root/etc/config/openclash
 mkdir -p package/emortal/luci-app-openclash/root/etc/openclash/core
 if ${CLASH_META_REPOS_VERNESONG}; then
-	curl --retry 5 -L https://github.com/vernesong/OpenClash/raw/core/dev/smart/clash-linux-${CPU_MODEL}.tar.gz | tar zxf -
-	mv clash package/emortal/luci-app-openclash/root/etc/openclash/core/clash_meta
+	CLASH_CORE_TMP=$(mktemp -d)
+	if curl --fail --show-error --retry 5 --retry-delay 2 -L "https://github.com/vernesong/OpenClash/raw/core/dev/smart/clash-linux-${CPU_MODEL}.tar.gz" -o "$CLASH_CORE_TMP/core.tar.gz" && \
+		tar -xzf "$CLASH_CORE_TMP/core.tar.gz" -C "$CLASH_CORE_TMP" && [ -f "$CLASH_CORE_TMP/clash" ]; then
+		install -m 0755 "$CLASH_CORE_TMP/clash" package/emortal/luci-app-openclash/root/etc/openclash/core/clash_meta
+	else
+		echo "⚠️ OpenClash core source unavailable; falling back to official Mihomo"
+		install_mihomo_latest "$CLASH_CORE_TMP" || { echo "❌ Mihomo fallback failed"; exit 1; }
+	fi
+	rm -rf "$CLASH_CORE_TMP"
 else
-	CLASH_META_VERSION="$(curl --retry 5 -L https://api.github.com/repos/MetaCubeX/mihomo/releases/latest 2>/dev/null|grep -E 'tag_name' |grep -E 'v[0-9.]+' -o 2>/dev/null)"
-	curl --retry 5 -L https://github.com/MetaCubeX/mihomo/releases/download/${CLASH_META_VERSION}/mihomo-linux-amd64-${CLASH_META_VERSION}.gz -O
-	gzip -d mihomo-linux-amd64-${CLASH_META_VERSION}.gz
-	mv mihomo-linux-amd64-${CLASH_META_VERSION} package/emortal/luci-app-openclash/root/etc/openclash/core/clash_meta
+	CLASH_CORE_TMP=$(mktemp -d)
+	install_mihomo_latest "$CLASH_CORE_TMP" || { echo "❌ Mihomo core download failed"; exit 1; }
+	rm -rf "$CLASH_CORE_TMP"
 fi
-chmod +x package/emortal/luci-app-openclash/root/etc/openclash/core/clash_meta
-curl --retry 5 -L https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download/geoip.dat -o package/emortal/luci-app-openclash/root/etc/openclash/GeoIP.dat
-curl --retry 5 -L https://github.com/vernesong/mihomo/releases/download/LightGBM-Model/Model-large.bin -o package/emortal/luci-app-openclash/root/etc/openclash/Model.bin
+download_required "https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download/geoip.dat" package/emortal/luci-app-openclash/root/etc/openclash/GeoIP.dat "GeoIP data"
+download_required "https://github.com/vernesong/mihomo/releases/download/LightGBM-Model/Model-large.bin" package/emortal/luci-app-openclash/root/etc/openclash/Model.bin "Mihomo model"
+mkdir -p files/etc/config
 echo '
 
 config smartdns
@@ -979,7 +1019,8 @@ FW_HASH=$(git -C "$GITHUB_WORKSPACE" rev-parse --short HEAD 2>/dev/null || echo 
 if ! git -C "$GITHUB_WORKSPACE" diff --quiet --ignore-submodules --; then
 	FW_HASH="${FW_HASH}-dirty"
 fi
-FW_DEVICE=$(grep '^RELEASE_NAME=' "$GITHUB_WORKSPACE/openwrt-device.conf" 2>/dev/null | cut -d= -f2 | tr -d '"' || echo "unknown")
+FW_DEVICE=$(grep '^RELEASE_NAME=' "$GITHUB_WORKSPACE/openwrt-device.conf" 2>/dev/null | cut -d= -f2 | tr -d '"')
+FW_DEVICE=${FW_DEVICE:-generic}
 cat > package/base-files/files/etc/firmware_version <<FWEOF
 VERSION=${FW_DATE}-${FW_HASH}
 DEVICE=${FW_DEVICE}
@@ -987,8 +1028,10 @@ BUILD_DATE=$(date -Iseconds)
 FWEOF
 echo "✅ firmware_version: ${FW_DATE}-${FW_HASH} (${FW_DEVICE})"
 
-cp "$GITHUB_WORKSPACE/openwrt-device.conf" package/base-files/files/etc/openwrt-device.conf
-echo "✅ openwrt-device.conf → /etc/"
+if [ -f "$GITHUB_WORKSPACE/openwrt-device.conf" ]; then
+	cp "$GITHUB_WORKSPACE/openwrt-device.conf" package/base-files/files/etc/openwrt-device.conf
+	echo "✅ openwrt-device.conf → /etc/"
+fi
 
 cat > package/base-files/files/etc/rc.local <<'RCLOCAL'
 #!/bin/sh

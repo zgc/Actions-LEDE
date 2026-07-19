@@ -152,7 +152,17 @@ if ! GITHUB_WORKSPACE=$GITHUB_WORKSPACE BUILD_CACHE_DIR=$BUILD_CACHE_DIR $GITHUB
   echo "❌ diy-part1.sh failed"
   exit 1
 fi
-./scripts/feeds update -f -a || { echo "❌ feeds update failed"; exit 1; }
+git config --global http.version HTTP/1.1
+feeds_updated=0
+for attempt in 1 2 3; do
+  if ./scripts/feeds update -f -a; then
+    feeds_updated=1
+    break
+  fi
+  echo "⚠️ feeds update failed (attempt $attempt/3), retrying..."
+  sleep $((attempt * 3))
+done
+[ "$feeds_updated" -eq 1 ] || { echo "❌ feeds update failed after 3 attempts"; exit 1; }
 ./scripts/feeds install -a || { echo "❌ feeds install failed"; exit 1; }
 
 # Remove feeds symlinks that conflict with custom (emortal) packages
@@ -188,8 +198,32 @@ fi
 # Section 5: Config
 # ============================================================
 
+refresh_package_metadata() {
+  # Only regenerate Kconfig package metadata. Do not remove build outputs or downloads.
+  rm -f tmp/.packageinfo tmp/.packagedeps tmp/.packageauxvars tmp/.packageusergroup \
+    tmp/.config-*.in tmp/info/.files-packageinfo* tmp/info/.packageinfo-*
+  make prepare-tmpinfo || { echo "❌ package metadata refresh failed"; exit 1; }
+  test -s tmp/.packageinfo || { echo "❌ package metadata is empty"; exit 1; }
+}
+
+verify_config_packages() {
+  local package missing_packages=""
+  [ -f "$GITHUB_WORKSPACE/$CONFIG_FILE" ] || return 0
+  while IFS= read -r package; do
+    [ -z "$package" ] && continue
+    grep -Fqx "CONFIG_PACKAGE_${package}=y" .config || missing_packages="$missing_packages $package"
+  done < <(sed -n 's/^CONFIG_PACKAGE_\([A-Za-z0-9_-]*\)=y$/\1/p' "$GITHUB_WORKSPACE/$CONFIG_FILE")
+  if [ -n "$missing_packages" ]; then
+    echo "❌ Requested packages missing after defconfig:$missing_packages"
+    exit 1
+  fi
+  echo "✅ Requested package selections verified"
+}
+
 [ -e $GITHUB_WORKSPACE/$CONFIG_FILE ] && cp $GITHUB_WORKSPACE/$CONFIG_FILE .config
+refresh_package_metadata
 make defconfig || { echo "❌ defconfig failed"; exit 1; }
+verify_config_packages
 
 popd
 
@@ -203,31 +237,9 @@ if ! GITHUB_WORKSPACE=$GITHUB_WORKSPACE $GITHUB_WORKSPACE/$DIY_P2_SH; then
   echo "❌ diy-part2.sh failed"
   exit 1
 fi
+refresh_package_metadata
 make defconfig || { echo "❌ defconfig (post diy) failed"; exit 1; }
-
-# Prevent false-positive full rebuild due to defconfig timestamp change.
-# make defconfig updates .config mtime, which makes all existing .built stamps
-# appear stale. The solution: touch existing .built to match .config so make only
-# compiles genuinely new packages (like smartdns) that have no .built yet.
-# Docker overlay2 filesystem rounds down sub-second timestamps, so
-# `touch -r .config` makes .built ~1s OLDER than .config → full rebuild.
-# Fix: set timestamps to .config epoch + 2 seconds to ensure .built > .config.
-CONFIG_TS=$(stat -c%Y .config)
-NEW_TS=$((CONFIG_TS + 2))
-# Sync all existing .built stamps to .config + 2s so make skips stale packages.
-find build_dir/target-*/ -name .built -exec touch -d @$NEW_TS {} \; 2>/dev/null || true
-find build_dir/hostpkg/ -name .built -exec touch -d @$NEW_TS {} \; 2>/dev/null || true
-find build_dir/toolchain*/ -name .built -exec touch -d @$NEW_TS {} \; 2>/dev/null || true
-# Sync _installed stamps EXCEPT smartdns/luci-app-smartdns (must be rebuilt).
-find staging_dir/target-*/stamp/ -name ".*_installed" ! -name "*.smartdns*" ! -name "*.luci-app-smartdns*" -exec touch -d @$NEW_TS {} \; 2>/dev/null || true
-find staging_dir/hostpkg/stamp/ -name ".*_installed" ! -name "*.smartdns*" ! -name "*.luci-app-smartdns*" -exec touch -d @$NEW_TS {} \; 2>/dev/null || true
-# CLEAN smartdns stamps from build_dir so make recompiles from scratch
-# (built from incomplete 6th-build artifacts, install always fails).
-rm -f build_dir/target-*/smartdns-*/.built
-rm -f build_dir/target-*/luci-app-smartdns-*/.built
-rm -f staging_dir/target-*/stamp/.smartdns_installed
-rm -f staging_dir/target-*/stamp/.luci-app-smartdns_installed
-unset CONFIG_TS NEW_TS
+verify_config_packages
 
 # ============================================================
 # Section 6: Package Fixes
@@ -276,11 +288,24 @@ fi
 sed -i 's/# CONFIG_PACKAGE_luci-app-zerotier is not set/CONFIG_PACKAGE_luci-app-zerotier=y/' .config
 sed -i 's/CONFIG_PACKAGE_luci-app-zerotier=m/CONFIG_PACKAGE_luci-app-zerotier=y/' .config
 
-# Bump zerotier to 1.16.2 (feeds has older, 1.16.2 supports moon natively)
+# Resolve ZeroTier once per build. Set ZEROTIER_VERSION to a concrete release
+# in openwrt-device.conf to keep a reproducible version instead of latest.
 ZT_FEED=feeds/packages/net/zerotier
-ZT_VER_TARGET="1.16.2"
 if [ -f $ZT_FEED/Makefile ]; then
   ZT_VER_CURRENT=$(grep '^PKG_VERSION:=' "$ZT_FEED/Makefile" | head -1 | cut -d= -f2)
+  ZT_VER_TARGET="${ZEROTIER_VERSION:-latest}"
+  if [ "$ZT_VER_TARGET" = "latest" ]; then
+    ZT_VER_TARGET=$(curl --fail --retry 3 --retry-delay 2 --silent --show-error \
+      https://api.github.com/repos/zerotier/ZeroTierOne/releases/latest | \
+      python3 -c 'import json, sys; print(json.load(sys.stdin).get("tag_name", "").lstrip("v"))' 2>/dev/null)
+  fi
+  case "$ZT_VER_TARGET" in
+    [0-9]*.[0-9]*.[0-9]*) ;;
+    *)
+      echo "WARNING: zerotier release lookup failed; keeping $ZT_VER_CURRENT"
+      ZT_VER_TARGET="$ZT_VER_CURRENT"
+      ;;
+  esac
   if [ "$ZT_VER_CURRENT" != "$ZT_VER_TARGET" ]; then
     # Update version and hash atomically. A failed HTTP request must not leave
     # a new version paired with the old source hash.
@@ -293,7 +318,7 @@ if [ -f $ZT_FEED/Makefile ]; then
     if [ "${#ZT_HASH}" -eq 64 ]; then
       sed -i "s/^PKG_VERSION:=$ZT_VER_CURRENT/PKG_VERSION:=$ZT_VER_TARGET/" $ZT_FEED/Makefile
       sed -i "s/^PKG_HASH:=.*/PKG_HASH:=$ZT_HASH/" $ZT_FEED/Makefile
-      echo "✅ zerotier bumped $ZT_VER_CURRENT → $ZT_VER_TARGET (hash: ${ZT_HASH:0:12}...)"
+      echo "✅ zerotier updated $ZT_VER_CURRENT → $ZT_VER_TARGET (hash: ${ZT_HASH:0:12}...)"
     else
       echo "⚠️ zerotier source verification failed; keeping $ZT_VER_CURRENT unchanged"
     fi
@@ -307,6 +332,33 @@ if [ -f $ZT_FEED/Makefile ]; then
     echo "✅ zerotier config_path enabled for data persistence"
   fi
 fi
+
+# Persist the exact dynamic inputs in the firmware. This keeps the "latest"
+# policy auditable and identifies the actual commit even when a local cache was used.
+write_build_provenance() {
+  local file="files/etc/build-provenance" component artifact
+  mkdir -p "$(dirname "$file")"
+  {
+    echo "format=1"
+    echo "openwrt.commit=$(git rev-parse HEAD)"
+    echo "openwrt.branch=$REPO_BRANCH"
+    echo "zerotier.version=$(sed -n 's/^PKG_VERSION:=//p' "$ZT_FEED/Makefile" | head -1)"
+    for component in feeds/packages feeds/luci feeds/routing feeds/telephony feeds/video \
+      package/emortal/luci-app-openclash package/emortal/smartdns feeds/luci/themes/luci-theme-argon; do
+      if [ -d "$component/.git" ]; then
+        echo "${component//\//.}.commit=$(git -C "$component" rev-parse HEAD)"
+      fi
+    done
+    for artifact in \
+      package/emortal/luci-app-openclash/root/etc/openclash/core/clash_meta \
+      package/emortal/luci-app-openclash/root/etc/openclash/GeoIP.dat \
+      package/emortal/luci-app-openclash/root/etc/openclash/Model.bin; do
+      [ -f "$artifact" ] && echo "${artifact##*/}.sha256=$(sha256sum "$artifact" | awk '{print $1}')"
+    done
+  } > "$file"
+  chmod 0644 "$file"
+}
+write_build_provenance
 
 
 # ============================================================
@@ -421,9 +473,16 @@ fi
 
 echo "=== Starting main build ==="
 
-make -j$(nproc) V=s
-BUILD_RC=$?
+BUILD_LOG=$(mktemp)
+trap 'rm -f "$BUILD_LOG"' EXIT
+set -o pipefail
+make -j$(nproc) V=s 2>&1 | tee "$BUILD_LOG"
+BUILD_RC=${PIPESTATUS[0]}
 if [ $BUILD_RC -ne 0 ]; then
+  if grep -q 'Hash mismatch for file' "$BUILD_LOG"; then
+    echo "❌ Source-cache checksum mismatch; skipping retry to preserve the failure evidence."
+    exit $BUILD_RC
+  fi
   echo "⚠️ First attempt failed, cleaning kernel build dir and retrying..."
   echo "=== target/linux/clean ==="
   make target/linux/clean V=s 2>/dev/null || true
@@ -433,9 +492,15 @@ if [ $BUILD_RC -ne 0 ]; then
     make package/firmware/$pkg/clean V=s 2>/dev/null || true
     make package/kernel/$pkg/clean V=s 2>/dev/null || true
   done
+  # gettext's host configure probe can leave recursively nested confdir3
+  # directories after an interrupted build. Recreate only that host package.
+  make package/libs/gettext-full/host/clean V=s 2>/dev/null || true
+  rm -rf build_dir/hostpkg/gettext-*
   make -j$(nproc) V=s
   BUILD_RC=$?
 fi
+rm -f "$BUILD_LOG"
+trap - EXIT
 popd
 
 if [ $BUILD_RC -ne 0 ]; then
@@ -454,47 +519,75 @@ cp -f openwrt/.config config.buildinfo || { echo "❌ failed to save config.buil
 echo "✅ Saved expanded config to config.buildinfo"
 
 mkdir -p "$RELEASE_DIR" || { echo "❌ failed to create release directory"; exit 1; }
+cp -f openwrt/.config "$RELEASE_DIR/config.buildinfo" || { echo "❌ failed to save release config.buildinfo"; exit 1; }
 
-# Find the deepest firmware output directory under bin/targets
-FIRMWARE_DIR=$(find openwrt/bin/targets -type d -name "64" 2>/dev/null | head -1)
-if [ -z "$FIRMWARE_DIR" ]; then
-  FIRMWARE_DIR=$(find openwrt/bin/targets -mindepth 2 -maxdepth 4 -type d 2>/dev/null | grep -v packages | head -1)
+# Resolve exactly one firmware output directory. Never let a stale target
+# directory silently win because filesystem traversal happened to list it first.
+mapfile -t firmware_dirs < <(find openwrt/bin/targets -type d -name "64" 2>/dev/null)
+if [ "${#firmware_dirs[@]}" -ne 1 ]; then
+  mapfile -t firmware_dirs < <(find openwrt/bin/targets -mindepth 2 -maxdepth 4 -type d 2>/dev/null | grep -v '/packages$')
 fi
+if [ "${#firmware_dirs[@]}" -ne 1 ]; then
+  echo "❌ expected exactly one firmware directory, found ${#firmware_dirs[@]}"
+  printf '  %s\n' "${firmware_dirs[@]}"
+  exit 1
+fi
+FIRMWARE_DIR="${firmware_dirs[0]}"
 echo "📦 Firmware directory: $FIRMWARE_DIR"
 
 if [ -d "$FIRMWARE_DIR" ]; then
-  cp -f "$FIRMWARE_DIR"/config.buildinfo "$RELEASE_DIR/" || { echo "❌ missing target config.buildinfo"; exit 1; }
+  cp -f "$FIRMWARE_DIR"/config.buildinfo "$RELEASE_DIR/${RELEASE_NAME}.target.config.buildinfo" || { echo "❌ missing target config.buildinfo"; exit 1; }
   # Find the combined/EFI firmware image (preferred) or any .img.gz
-  FIRMWARE_FILE=$(find "$FIRMWARE_DIR" -maxdepth 1 -name "*combined*img.gz" -type f 2>/dev/null | head -1)
-  if [ -z "$FIRMWARE_FILE" ]; then
-    FIRMWARE_FILE=$(find "$FIRMWARE_DIR" -maxdepth 1 -name "*img.gz" -type f 2>/dev/null | head -1)
+  mapfile -t firmware_files < <(find "$FIRMWARE_DIR" -maxdepth 1 -name "*combined*img.gz" -type f 2>/dev/null)
+  if [ "${#firmware_files[@]}" -eq 0 ]; then
+    mapfile -t firmware_files < <(find "$FIRMWARE_DIR" -maxdepth 1 -name "*img.gz" -type f 2>/dev/null)
   fi
-  if [ -n "$FIRMWARE_FILE" ] && [ -f "$FIRMWARE_FILE" ]; then
+  if [ "${#firmware_files[@]}" -ne 1 ]; then
+    echo "❌ expected exactly one firmware image, found ${#firmware_files[@]}"
+    printf '  %s\n' "${firmware_files[@]}"
+    exit 1
+  fi
+  FIRMWARE_FILE="${firmware_files[0]}"
+  if [ -f "$FIRMWARE_FILE" ]; then
     cp -f "$FIRMWARE_FILE" "$RELEASE_DIR/$RELEASE_NAME.img.gz" || { echo "❌ failed to copy firmware image"; exit 1; }
     echo "✅ Firmware: $(basename "$FIRMWARE_FILE")"
   else
     echo "❌ No .img.gz found in $FIRMWARE_DIR!"
     exit 1
   fi
-  MANIFEST=$(find "$FIRMWARE_DIR" -maxdepth 1 -name "*.manifest" -type f 2>/dev/null | head -1)
-  if [ -n "$MANIFEST" ] && [ -f "$MANIFEST" ]; then
+  mapfile -t manifests < <(find "$FIRMWARE_DIR" -maxdepth 1 -name "*.manifest" -type f 2>/dev/null)
+  if [ "${#manifests[@]}" -ne 1 ]; then
+    echo "❌ expected exactly one firmware manifest, found ${#manifests[@]}"
+    printf '  %s\n' "${manifests[@]}"
+    exit 1
+  fi
+  MANIFEST="${manifests[0]}"
+  if [ -f "$MANIFEST" ]; then
     cp -f "$MANIFEST" "$RELEASE_DIR/$RELEASE_NAME.manifest" || { echo "❌ failed to copy manifest"; exit 1; }
 
-    # A successful image build is not sufficient: selected LuCI applications
-    # and their supporting services must be present in the target manifest.
-    # This prevents flashing an image that silently lost a Web UI package.
-    missing_packages=""
-    required_packages="$(sed -n 's/^CONFIG_PACKAGE_\(luci-app-[A-Za-z0-9_-]*\)=y$/\1/p' "$CONFIG_FILE") smartdns smartdns-ui snmpd-ssl wget-ssl"
-    for package in $required_packages; do
-      if ! grep -q "^$package - " "$MANIFEST"; then
-        missing_packages="$missing_packages $package"
-      fi
-    done
-    if [ -n "$missing_packages" ]; then
-      echo "❌ firmware manifest is missing selected packages:$missing_packages"
-      exit 1
-    fi
-    echo "✅ firmware manifest contains selected LuCI and service packages"
+	    # Validate every selected package that has a concrete package definition.
+	    # Some CONFIG_PACKAGE symbols are feature toggles (for example,
+	    # dnsmasq_full_dhcpv6), so derive package names from .packageinfo rather
+	    # than treating every selected symbol as a manifest package name.
+	    manifest_check_dir=$(mktemp -d) || { echo "❌ failed to create manifest check directory"; exit 1; }
+	    awk '/^Package: / { print $2 }' "$GITHUB_WORKSPACE/openwrt/tmp/.packageinfo" | sort -u > "$manifest_check_dir/buildable" && test -s "$manifest_check_dir/buildable" || { rm -rf "$manifest_check_dir"; echo "❌ package metadata is unavailable for manifest validation"; exit 1; }
+	    sed -n 's/^CONFIG_PACKAGE_\([A-Za-z0-9_-]*\)=y$/\1/p' "$GITHUB_WORKSPACE/openwrt/.config" | sort -u > "$manifest_check_dir/selected" && test -s "$manifest_check_dir/selected" || { rm -rf "$manifest_check_dir"; echo "❌ selected package list is empty"; exit 1; }
+	    awk -F ' - ' 'NF >= 2 { print $1 }' "$MANIFEST" | sort -u > "$manifest_check_dir/manifest" && test -s "$manifest_check_dir/manifest" || { rm -rf "$manifest_check_dir"; echo "❌ firmware manifest is empty"; exit 1; }
+	    missing_packages=""
+	    while IFS= read -r package; do
+	      [ -z "$package" ] && continue
+	      # ImmortalWrt appends ABI suffixes (for example libopenssl3 and
+	      # libsqlite3-0). Accept only the exact package or that numeric ABI form.
+	      if ! grep -Fqx "$package" "$manifest_check_dir/manifest" && ! grep -Eq "^${package}([0-9]+([.-][0-9]+)*|-[0-9]+)$" "$manifest_check_dir/manifest"; then
+	        missing_packages="$missing_packages $package"
+	      fi
+	    done < <(comm -12 "$manifest_check_dir/selected" "$manifest_check_dir/buildable")
+	    rm -rf "$manifest_check_dir"
+	    if [ -n "$missing_packages" ]; then
+	      echo "❌ firmware manifest is missing selected packages:$missing_packages"
+	      exit 1
+	    fi
+	    echo "✅ firmware manifest contains every selected package"
   else
     echo "❌ No manifest found in $FIRMWARE_DIR!"
     exit 1
@@ -505,11 +598,15 @@ else
 fi
 
 cd "$RELEASE_DIR" || exit 1
-IMG_FILE=$(ls -1 *.img.gz 2>/dev/null | head -1)
-if [ -n "$IMG_FILE" ]; then
+IMG_FILE="${RELEASE_NAME}.img.gz"
+if [ -f "$IMG_FILE" ]; then
   BASE=$(basename "$IMG_FILE" .img.gz)
-  md5sum "$IMG_FILE" > "${BASE}.img.gz.md5" 2>/dev/null || true
-  gzip -dc "$IMG_FILE" | md5sum | sed "s/-/${BASE}.img/" > "${BASE}.img.md5" 2>/dev/null || true
+	  gzip -t "$IMG_FILE" || { echo "❌ firmware gzip integrity check failed"; exit 1; }
+	  md5sum "$IMG_FILE" > "${BASE}.img.gz.md5" || { echo "❌ failed to create compressed firmware MD5"; exit 1; }
+	  gzip -dc "$IMG_FILE" | md5sum | sed "s/-/${BASE}.img/" > "${BASE}.img.md5" || { echo "❌ failed to create uncompressed firmware MD5"; exit 1; }
+else
+  echo "❌ release image $IMG_FILE is missing"
+  exit 1
 fi
-ls -lh *.img.gz 2>/dev/null
+ls -lh "$IMG_FILE"
 cd "$GITHUB_WORKSPACE"
