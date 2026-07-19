@@ -22,17 +22,24 @@ fail() {
 }
 
 verify_written_image() {
-	local img_size full_blocks tail_bytes source_md5 disk_md5
+	local img_size full_blocks tail_bytes tail_blocks source_md5 disk_md5
 
 	img_size=$(wc -c < "$IMG")
 	full_blocks=$((img_size / 1048576))
 	tail_bytes=$((img_size % 1048576))
+	[ $((tail_bytes % 512)) -eq 0 ] || {
+		echo -e "\e[91m镜像长度不是 512 字节对齐，拒绝读回校验\e[0m" >&2
+		return 1
+	}
+	tail_blocks=$((tail_bytes / 512))
 	echo -e "\e[92m读回校验 /dev/$DISK（${img_size} bytes）\e[0m"
 	source_md5=$(md5sum "$IMG" | awk '{print $1}')
 	disk_md5=$(
 		{
 			[ "$full_blocks" -eq 0 ] || dd if="/dev/$DISK" bs=1M count="$full_blocks" status=none
-			[ "$tail_bytes" -eq 0 ] || dd if="/dev/$DISK" bs=1 skip="$((full_blocks * 1048576))" count="$tail_bytes" status=none
+			# BusyBox dd rejects byte offsets above 2 GiB. Use sector-sized
+			# addressing for the residual image tail instead.
+			[ "$tail_blocks" -eq 0 ] || dd if="/dev/$DISK" bs=512 skip="$((full_blocks * 2048))" count="$tail_blocks" status=none
 		} | md5sum | awk '{print $1}'
 	)
 	if [ "$source_md5" != "$disk_md5" ]; then
