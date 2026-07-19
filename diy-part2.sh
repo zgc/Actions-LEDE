@@ -80,6 +80,12 @@ done
 
 sed -i '/commit luci/i\set luci.main.mediaurlbase="/luci-static/argon"' package/emortal/default-settings/files/99-default-settings
 
+# Keep HTTP available for existing LAN and FRP clients, and also provision
+# LuCI's OpenSSL listener for direct authenticated LAN access.
+sed -i '/^exit 0$/i uci -q add_list uhttpd.main.listen_https="0.0.0.0:443"' package/emortal/default-settings/files/99-default-settings
+sed -i '/^exit 0$/i uci -q add_list uhttpd.main.listen_https="[::]:443"' package/emortal/default-settings/files/99-default-settings
+sed -i '/^exit 0$/i uci -q commit uhttpd' package/emortal/default-settings/files/99-default-settings
+
 # Software flow offloading + Fullcone NAT (turboacc replacement)
 sed -i '/^exit 0$/i uci set firewall.@defaults[0].flow_offloading="1"' package/emortal/default-settings/files/99-default-settings
 sed -i '/^exit 0$/i uci set firewall.@zone[1].fullcone="1"' package/emortal/default-settings/files/99-default-settings
