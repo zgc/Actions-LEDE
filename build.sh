@@ -220,6 +220,17 @@ verify_config_packages() {
   echo "✅ Requested package selections verified"
 }
 
+verify_device_overlay() {
+  local frpc_config="$GITHUB_WORKSPACE/files/etc/config/frpc"
+
+  [ -f "$frpc_config" ] || return 0
+  if grep -Eq "^[[:space:]]*option[[:space:]]+proxy_protocol_version[[:space:]]+['\"]?disable" "$frpc_config"; then
+    echo "❌ FRPC 0.69 does not support proxy_protocol_version 'disable'"
+    exit 1
+  fi
+  echo "✅ Device overlay validation passed"
+}
+
 [ -e $GITHUB_WORKSPACE/$CONFIG_FILE ] && cp $GITHUB_WORKSPACE/$CONFIG_FILE .config
 refresh_package_metadata
 make defconfig || { echo "❌ defconfig failed"; exit 1; }
@@ -227,6 +238,7 @@ verify_config_packages
 
 popd
 
+verify_device_overlay
 [ -e $GITHUB_WORKSPACE/files ] && cp -r $GITHUB_WORKSPACE/files openwrt/files
 [ -f openwrt/files/etc/smartdns/ui/smartdns.db ] && chmod 600 openwrt/files/etc/smartdns/ui/smartdns.db
 [ -e $GITHUB_WORKSPACE/$CONFIG_FILE ] && cp $GITHUB_WORKSPACE/$CONFIG_FILE openwrt/.config
