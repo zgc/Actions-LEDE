@@ -74,6 +74,11 @@ for script in check_smartdns_connect.sh check_openclash_connect.sh check_wan_con
 	chmod +x "package/base-files/files/etc/$script"
 done
 
+cp "$GITHUB_WORKSPACE/files/etc/verify_rootfs.sh" package/base-files/files/etc/verify_rootfs.sh
+chmod +x package/base-files/files/etc/verify_rootfs.sh
+cp "$GITHUB_WORKSPACE/files/etc/init.d/rootfs-integrity-check" package/base-files/files/etc/init.d/rootfs-integrity-check
+chmod +x package/base-files/files/etc/init.d/rootfs-integrity-check
+
 for cron_script in check_smartdns_connect.sh check_openclash_connect.sh check_wan_connect.sh; do
 	sed -i '/exit 0/i\if ! grep -q "/etc/'"$cron_script"'" /etc/crontabs/root 2>/dev/null; then echo "#*/5 * * * * /etc/'"$cron_script"'" >> /etc/crontabs/root; fi' package/emortal/default-settings/files/99-default-settings
 done

@@ -1,0 +1,18 @@
+#!/bin/sh /etc/rc.common
+
+START=99
+
+start() {
+	local status=/etc/rootfs-integrity.status
+
+	[ -e "$status" ] && return 0
+	if /etc/verify_rootfs.sh >/tmp/rootfs-integrity.log 2>&1; then
+		printf 'status=passed\nchecked_at=%s\n' "$(date '+%Y-%m-%dT%H:%M:%S%z')" > "$status"
+		logger -t rootfs-integrity 'initial rootfs integrity check passed'
+	else
+		printf 'status=failed\nchecked_at=%s\n' "$(date '+%Y-%m-%dT%H:%M:%S%z')" > "$status"
+		logger -t rootfs-integrity 'initial rootfs integrity check failed; see /tmp/rootfs-integrity.log'
+		cat /tmp/rootfs-integrity.log >&2
+		return 1
+	fi
+}

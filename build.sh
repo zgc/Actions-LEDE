@@ -621,6 +621,41 @@ IMG_FILE="${RELEASE_NAME}.img.gz"
 if [ -f "$IMG_FILE" ]; then
   BASE=$(basename "$IMG_FILE" .img.gz)
 	  gzip -t "$IMG_FILE" || { echo "❌ firmware gzip integrity check failed"; exit 1; }
+
+	  # A gzip checksum only proves the image bytes are intact. Fully extract the
+	  # embedded SquashFS before publishing so a corrupt compressed block cannot
+	  # become a bootable-but-broken LuCI image.
+	  image_verify_dir=$(mktemp -d) || { echo "❌ failed to create image verification directory"; exit 1; }
+	  image_raw="$image_verify_dir/${BASE}.img"
+	  image_rootfs="$image_verify_dir/rootfs"
+	  cleanup_image_verify() { rm -rf "$image_verify_dir"; }
+	  if ! gzip -dc "$IMG_FILE" > "$image_raw"; then
+	    cleanup_image_verify
+	    echo "❌ failed to decompress firmware image for SquashFS verification"
+	    exit 1
+	  fi
+	  squashfs_offset=$(LC_ALL=C grep -abo -m 1 'hsqs' "$image_raw" | cut -d: -f1 || true)
+	  if [ -z "$squashfs_offset" ]; then
+	    cleanup_image_verify
+	    echo "❌ unable to locate SquashFS in firmware image"
+	    exit 1
+	  fi
+	  echo "🔍 Fully extracting SquashFS at offset $squashfs_offset"
+	  if ! unsquashfs -offset "$squashfs_offset" -excludes -d "$image_rootfs" "$image_raw" dev >/dev/null; then
+	    cleanup_image_verify
+	    echo "❌ firmware SquashFS extraction failed"
+	    exit 1
+	  fi
+	  for luci_asset in luci.js ui.js; do
+	    [ -s "$image_rootfs/www/luci-static/resources/$luci_asset" ] || {
+	      cleanup_image_verify
+	      echo "❌ verified SquashFS is missing LuCI asset: $luci_asset"
+	      exit 1
+	    }
+	  done
+	  cleanup_image_verify
+	  echo "✅ firmware SquashFS fully extracted and LuCI assets verified"
+
 	  md5sum "$IMG_FILE" > "${BASE}.img.gz.md5" || { echo "❌ failed to create compressed firmware MD5"; exit 1; }
 	  gzip -dc "$IMG_FILE" | md5sum | sed "s/-/${BASE}.img/" > "${BASE}.img.md5" || { echo "❌ failed to create uncompressed firmware MD5"; exit 1; }
 else
