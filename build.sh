@@ -424,6 +424,13 @@ echo "=== Building and installing host tools ==="
 make tools/install -j$(nproc) V=s || { echo "❌ tools/install failed"; exit 1; }
 echo "✅ host tools installed"
 
+# FRP is pre-compiled below to avoid Go's parallel-build race.  Its package
+# build needs target libgcc, which only exists after the target toolchain is
+# installed; a warm cache used to hide this ordering dependency.
+echo "=== Building and installing target toolchain ==="
+make toolchain/install -j$(nproc) V=s || { echo "❌ toolchain/install failed"; exit 1; }
+echo "✅ target toolchain installed"
+
 # ============================================================
 # Section 9: Go Packages Pre-compile
 # ============================================================
