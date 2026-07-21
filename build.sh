@@ -25,6 +25,8 @@ if [ "${ALLOW_DIRTY_BUILD:-0}" != "1" ] && [ -n "$(git -C "$GITHUB_WORKSPACE" st
 fi
 # Source device-specific overrides
 [ -f "$GITHUB_WORKSPACE/openwrt-device.conf" ] && source "$GITHUB_WORKSPACE/openwrt-device.conf"
+# Package customization runs in diy-part2.sh; retain an optional device pin.
+export ZEROTIER_VERSION
 
 # Fix: Docker image now has git compiled against OpenSSL (not GnuTLS)
 # TLS workarounds no longer needed — keep postBuffer as safety net
@@ -262,99 +264,16 @@ export GOPROXY=https://goproxy.cn,https://goproxy.io,direct
 export GONOSUMCHECK=*
 export GOSUMDB=off
 
-# Fix netdata build: disable cloud/ACLK to remove protobuf dependency
-# Root cause: netdata's #define error(args...) macro conflicts with abseil-cpp headers
-# (protobuf 29.5 -> abseil-cpp). --disable-cloud removes the protobuf dependency entirely.
-NETDATA_FEED=feeds/packages/admin/netdata
-if [ -f "$NETDATA_FEED/Makefile" ]; then
-  if grep -q '\-\-disable-cloud' "$NETDATA_FEED/Makefile"; then
-    echo "✅ netdata: --disable-cloud already present"
-  else
-    sed -i 's/\t--disable-ml$/\t--disable-ml \\\n\t--disable-cloud/' "$NETDATA_FEED/Makefile"
-    if grep -q '\-\-disable-cloud' "$NETDATA_FEED/Makefile"; then
-      echo "✅ netdata: --disable-cloud added (removes protobuf dependency)"
-    else
-      echo "⚠️ netdata: --disable-cloud not added (--disable-ml pattern changed, manual fix needed)"
-    fi
-  fi
-fi
-
-# Fix gnutls 3.8.10 stdbool.h cross-compilation error (gnulib detects ac_cv_header_stdbool_h=yes
-# but its replacement module still undef's HAVE_STDBOOL_H because it checks C99 compiler capabilities)
-# Patch config.h after configure to force HAVE_STDBOOL_H=1.
-GNUTLS_FEED=feeds/packages/libs/gnutls
-if [ -f "$GNUTLS_FEED/Makefile" ]; then
-  if ! grep -q 'HAVE_STDBOOL_H' "$GNUTLS_FEED/Makefile"; then
-    sed -i '/^define Build\/InstallDev/i define Build/Configure\n\t$$(call Build/Configure/Default)\n\t$$(SED) "s|/\\* #undef HAVE_STDBOOL_H \\*/|#define HAVE_STDBOOL_H 1|" $$(PKG_BUILD_DIR)/config.h\nendef\n' "$GNUTLS_FEED/Makefile"
-    if grep -q 'HAVE_STDBOOL_H' "$GNUTLS_FEED/Makefile"; then
-      echo "✅ gnutls: HAVE_STDBOOL_H fix applied (config.h patch after configure)"
-    else
-      echo "⚠️ gnutls: fix not applied (sed pattern changed, manual fix needed)"
-    fi
-  else
-    echo "✅ gnutls: HAVE_STDBOOL_H fix already applied"
-  fi
-fi
-
-# Ensure zerotier LuCI is enabled after defconfig
-sed -i 's/# CONFIG_PACKAGE_luci-app-zerotier is not set/CONFIG_PACKAGE_luci-app-zerotier=y/' .config
-sed -i 's/CONFIG_PACKAGE_luci-app-zerotier=m/CONFIG_PACKAGE_luci-app-zerotier=y/' .config
-
-# Resolve ZeroTier once per build. Set ZEROTIER_VERSION to a concrete release
-# in openwrt-device.conf to keep a reproducible version instead of latest.
-ZT_FEED=feeds/packages/net/zerotier
-if [ -f "$ZT_FEED/Makefile" ]; then
-  ZT_VER_CURRENT=$(grep '^PKG_VERSION:=' "$ZT_FEED/Makefile" | head -1 | cut -d= -f2)
-  ZT_VER_TARGET="${ZEROTIER_VERSION:-latest}"
-  if [ "$ZT_VER_TARGET" = "latest" ]; then
-    ZT_VER_TARGET=$(curl --fail --retry 3 --retry-delay 2 --silent --show-error \
-      https://api.github.com/repos/zerotier/ZeroTierOne/releases/latest | \
-      python3 -c 'import json, sys; print(json.load(sys.stdin).get("tag_name", "").lstrip("v"))' 2>/dev/null)
-  fi
-  case "$ZT_VER_TARGET" in
-    [0-9]*.[0-9]*.[0-9]*) ;;
-    *)
-      echo "WARNING: zerotier release lookup failed; keeping $ZT_VER_CURRENT"
-      ZT_VER_TARGET="$ZT_VER_CURRENT"
-      ;;
-  esac
-  if [ "$ZT_VER_CURRENT" != "$ZT_VER_TARGET" ]; then
-    # Update version and hash atomically. A failed HTTP request must not leave
-    # a new version paired with the old source hash.
-    ZT_HASH=""
-    if ZT_HASH=$(curl --fail --retry 3 --retry-delay 2 --silent --show-error -L "https://codeload.github.com/zerotier/ZeroTierOne/tar.gz/$ZT_VER_TARGET" | sha256sum | awk '{print $1}'); then
-      case "$ZT_HASH" in
-      ''|*[!0-9a-f]*) ZT_HASH="" ;;
-      esac
-    fi
-    if [ "${#ZT_HASH}" -eq 64 ]; then
-      sed -i "s/^PKG_VERSION:=$ZT_VER_CURRENT/PKG_VERSION:=$ZT_VER_TARGET/" "$ZT_FEED/Makefile"
-      sed -i "s/^PKG_HASH:=.*/PKG_HASH:=$ZT_HASH/" "$ZT_FEED/Makefile"
-      echo "✅ zerotier updated $ZT_VER_CURRENT → $ZT_VER_TARGET (hash: ${ZT_HASH:0:12}...)"
-    else
-      echo "⚠️ zerotier source verification failed; keeping $ZT_VER_CURRENT unchanged"
-    fi
-  else
-    echo "✅ zerotier already at $ZT_VER_TARGET"
-  fi
-  # Enable config_path for persistent zerotier data (identity, moon, networks)
-  ZT_CONF=$ZT_FEED/files/etc/config/zerotier
-  if [ -f "$ZT_CONF" ]; then
-    sed -i "s/#option config_path '.*'/option config_path '\/etc\/zerotier'/" "$ZT_CONF"
-    echo "✅ zerotier config_path enabled for data persistence"
-  fi
-fi
-
 # Persist the exact dynamic inputs in the firmware. This keeps the "latest"
 # policy auditable and identifies the actual commit even when a local cache was used.
 write_build_provenance() {
-  local file="files/etc/build-provenance" component artifact
+  local file="files/etc/build-provenance" component artifact zt_feed="feeds/packages/net/zerotier"
   mkdir -p "$(dirname "$file")"
   {
     echo "format=1"
     echo "openwrt.commit=$(git rev-parse HEAD)"
     echo "openwrt.branch=$REPO_BRANCH"
-    echo "zerotier.version=$(sed -n 's/^PKG_VERSION:=//p' "$ZT_FEED/Makefile" | head -1)"
+    [ -f "$zt_feed/Makefile" ] && echo "zerotier.version=$(sed -n 's/^PKG_VERSION:=//p' "$zt_feed/Makefile" | head -1)"
     for component in feeds/packages feeds/luci feeds/routing feeds/telephony feeds/video \
       package/emortal/luci-app-openclash package/emortal/smartdns feeds/luci/themes/luci-theme-argon; do
       if [ -d "$component/.git" ]; then
