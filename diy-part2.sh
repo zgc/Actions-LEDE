@@ -74,9 +74,9 @@ for script in check_smartdns_connect.sh check_openclash_connect.sh check_wan_con
 	chmod +x "package/base-files/files/etc/$script"
 done
 
-cp "$GITHUB_WORKSPACE/files/etc/verify_rootfs.sh" package/base-files/files/etc/verify_rootfs.sh
+cp "$GITHUB_WORKSPACE/scripts/verify_rootfs.sh" package/base-files/files/etc/verify_rootfs.sh
 chmod +x package/base-files/files/etc/verify_rootfs.sh
-cp "$GITHUB_WORKSPACE/files/etc/init.d/rootfs-integrity-check" package/base-files/files/etc/init.d/rootfs-integrity-check
+cp "$GITHUB_WORKSPACE/scripts/rootfs-integrity-check" package/base-files/files/etc/init.d/rootfs-integrity-check
 chmod +x package/base-files/files/etc/init.d/rootfs-integrity-check
 sed -i '/^exit 0$/i /etc/init.d/rootfs-integrity-check start' package/emortal/default-settings/files/99-default-settings
 
