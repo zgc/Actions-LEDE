@@ -338,16 +338,18 @@ if [ $BUILD_RC -ne 0 ]; then
   echo "⚠️ First attempt failed, cleaning kernel build dir and retrying..."
   echo "=== target/linux/clean ==="
   make target/linux/clean V=s 2>/dev/null || true
-  rm -rf build_dir/target-x86_64_musl/linux-x86_64/linux-*
-  # Also clean packages that are known to have transient ZFS parallel-build races
-  for pkg in intel-microcode linux-atm; do
-    make package/firmware/$pkg/clean V=s 2>/dev/null || true
-    make package/kernel/$pkg/clean V=s 2>/dev/null || true
+  for clean_target in ${RETRY_CLEAN_TARGETS:-}; do
+    case "$clean_target" in
+      package/*/clean) make "$clean_target" V=s 2>/dev/null || true ;;
+      *) echo "❌ invalid RETRY_CLEAN_TARGETS entry: $clean_target"; exit 1 ;;
+    esac
   done
-  # gettext's host configure probe can leave recursively nested confdir3
-  # directories after an interrupted build. Recreate only that host package.
-  make package/libs/gettext-full/host/clean V=s 2>/dev/null || true
-  rm -rf build_dir/hostpkg/gettext-*
+  for clean_path in ${RETRY_CLEAN_PATHS:-}; do
+    case "$clean_path" in
+      build_dir/*) rm -rf -- $clean_path ;;
+      *) echo "❌ invalid RETRY_CLEAN_PATHS entry: $clean_path"; exit 1 ;;
+    esac
+  done
   make -j$(nproc) V=s
   BUILD_RC=$?
 fi
