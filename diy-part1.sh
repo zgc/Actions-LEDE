@@ -104,18 +104,16 @@ SM_UI_FILE=""
 SM_UI_URL=""
 
 echo "=== Checking latest PikuZheng/smartdns release ==="
-for i in 1 2 3; do
-  _release=$(curl --fail --silent --show-error --location --connect-timeout 5 \
-    "https://api.github.com/repos/PikuZheng/smartdns/releases?per_page=10" 2>/dev/null | \
-    python3 -c '
+_release=$(curl --fail --silent --show-error --retry 5 --retry-delay 2 --location \
+  "https://api.github.com/repos/PikuZheng/smartdns/releases/latest" 2>/dev/null | \
+  python3 -c '
 import json
 import sys
 
 try:
-    for release in json.load(sys.stdin):
-        tag = release.get("tag_name", "")
-        if release.get("draft") or release.get("prerelease") or not tag.endswith("_with_ui"):
-            continue
+    release = json.load(sys.stdin)
+    tag = release.get("tag_name", "")
+    if not release.get("draft") and not release.get("prerelease") and tag.endswith("_with_ui"):
         version = tag.removesuffix("_with_ui")
         wanted = f"smartdns_with_ui.{version}.x86_64.ipk"
         for asset in release.get("assets", []):
@@ -127,58 +125,40 @@ except (ValueError, TypeError):
 
 sys.exit(1)
 ' 2>/dev/null)
-  if [ -n "$_release" ]; then
-    IFS=$'\t' read -r SM_TAG SM_VERSION SM_UI_FILE SM_UI_URL <<< "$_release"
-    echo "✅ smartdns: latest compatible release $SM_VERSION (tag: $SM_TAG)"
-    break
-  fi
-  [ "$i" -lt 3 ] && echo "⚠️ Retrying release check ($i)..." && sleep 2
-done
 
-if [ -z "$SM_TAG" ] || [ -z "$SM_VERSION" ] || [ -z "$SM_UI_FILE" ] || [ -z "$SM_UI_URL" ]; then
+if [ -z "$_release" ]; then
   echo "❌ smartdns: unable to discover a compatible source tag and x86_64 UI asset"
   exit 1
 fi
+IFS=$'\t' read -r SM_TAG SM_VERSION SM_UI_FILE SM_UI_URL <<< "$_release"
+echo "✅ smartdns: latest compatible release $SM_VERSION (tag: $SM_TAG)"
 
 # 4a. Download the verified pre-built smartdns UI asset (.so + wwwroot).
 _sm_root="$(pwd)"
 _sm_ui_tmp="/tmp/smartdns-ui-$$"
 rm -rf "$_sm_ui_tmp"
-SM_UI_RETRY=0
-until [ "$SM_UI_RETRY" -ge 3 ]; do
-    rm -rf "$_sm_ui_tmp"
-    mkdir -p "$_sm_ui_tmp"
-    cd "$_sm_ui_tmp"
-    if curl -sL --connect-timeout 10 "$SM_UI_URL" -o "$SM_UI_FILE" 2>/dev/null; then
-      SM_UI_SIZE=$(stat -c%s "$SM_UI_FILE" 2>/dev/null || echo 0)
-      if [ "$SM_UI_SIZE" -gt 100000 ]; then
-        (ar x "$SM_UI_FILE" 2>/dev/null || tar xzf "$SM_UI_FILE" 2>/dev/null) && \
-        if [ -f data.tar.gz ]; then
-          tar xzf data.tar.gz 2>/dev/null && echo "✅ smartdns-ui: data.tar.gz extracted"
-        elif [ -f data.tar.xz ]; then
-          tar xJf data.tar.xz 2>/dev/null && echo "✅ smartdns-ui: data.tar.xz extracted"
-        else
-          echo "⚠️ smartdns-ui: no data.tar.* in ipk"
-        fi
-        rm -f "$SM_UI_FILE" control.tar.gz debian-binary 2>/dev/null
-        cd "$_sm_root"
-        if [ -f "$_sm_ui_tmp/usr/lib/smartdns_ui.so" ]; then
-          echo "✅ smartdns-ui: libsmartdns_ui.so found in ipk"
-          break
-        else
-          echo "⚠️ smartdns-ui: .so not found in extracted ipk"
-        fi
-      else
-        echo "⚠️ smartdns-ui: download too small ($SM_UI_SIZE bytes), retrying..."
-        rm -f "$SM_UI_FILE"
-      fi
-    else
-      echo "⚠️ smartdns-ui: download failed (attempt $((SM_UI_RETRY+1)))"
-    fi
-    cd "$_sm_root"
-    SM_UI_RETRY=$((SM_UI_RETRY+1))
-    sleep 2
-done
+mkdir -p "$_sm_ui_tmp"
+cd "$_sm_ui_tmp"
+curl --fail --show-error --retry 5 --retry-delay 2 --location "$SM_UI_URL" -o "$SM_UI_FILE" || {
+  echo "❌ smartdns-ui asset download failed"
+  exit 1
+}
+SM_UI_SIZE=$(stat -c%s "$SM_UI_FILE" 2>/dev/null || echo 0)
+[ "$SM_UI_SIZE" -gt 100000 ] || { echo "❌ smartdns-ui asset is too small ($SM_UI_SIZE bytes)"; exit 1; }
+(ar x "$SM_UI_FILE" 2>/dev/null || tar xzf "$SM_UI_FILE" 2>/dev/null) || {
+  echo "❌ smartdns-ui asset extraction failed"
+  exit 1
+}
+if [ -f data.tar.gz ]; then
+  tar xzf data.tar.gz || { echo "❌ smartdns-ui data extraction failed"; exit 1; }
+elif [ -f data.tar.xz ]; then
+  tar xJf data.tar.xz || { echo "❌ smartdns-ui data extraction failed"; exit 1; }
+else
+  echo "❌ smartdns-ui asset has no data archive"
+  exit 1
+fi
+rm -f "$SM_UI_FILE" control.tar.gz debian-binary
+cd "$_sm_root"
 
 # smartdns-ui is selected by config.seed. Do not produce a package that merely
 # exists in the manifest while its shared object or web assets are absent.
