@@ -25,8 +25,8 @@ if [ "${ALLOW_DIRTY_BUILD:-0}" != "1" ] && [ -n "$(git -C "$GITHUB_WORKSPACE" st
 fi
 # Source device-specific overrides
 [ -f "$GITHUB_WORKSPACE/openwrt-device.conf" ] && source "$GITHUB_WORKSPACE/openwrt-device.conf"
-# Package customization runs in diy-part2.sh; retain an optional device pin.
-export ZEROTIER_VERSION
+# Package customization runs in diy-part2.sh; retain device-declared inputs.
+export ZEROTIER_VERSION SERIAL_BUILD_TARGETS
 
 # Fix: Docker image now has git compiled against OpenSSL (not GnuTLS)
 # TLS workarounds no longer needed — keep postBuffer as safety net
@@ -42,6 +42,7 @@ RELEASE_NAME=${RELEASE_NAME:-${DEVICE_NAME:-firmware}}
 REPO_URL="https://github.com/immortalwrt/immortalwrt"
 REPO_BRANCH="${REPO_BRANCH:-master}"
 REPO_COMMIT=""
+export OPENWRT_REF="$REPO_BRANCH"
 FEEDS_CONF="feeds.conf.default"
 CONFIG_FILE="config.seed"
 DIY_P1_SH="diy-part1.sh"
@@ -193,17 +194,6 @@ verify_config_packages() {
   echo "✅ Requested package selections verified"
 }
 
-verify_device_overlay() {
-  local frpc_config="$GITHUB_WORKSPACE/files/etc/config/frpc"
-
-  [ -f "$frpc_config" ] || return 0
-  if grep -Eq "^[[:space:]]*option[[:space:]]+proxy_protocol_version[[:space:]]+['\"]?disable" "$frpc_config"; then
-    echo "❌ FRPC 0.69 does not support proxy_protocol_version 'disable'"
-    exit 1
-  fi
-  echo "✅ Device overlay validation passed"
-}
-
 [ -e "$GITHUB_WORKSPACE/$CONFIG_FILE" ] && cp "$GITHUB_WORKSPACE/$CONFIG_FILE" .config
 refresh_package_metadata
 make defconfig || { echo "❌ defconfig failed"; exit 1; }
@@ -211,9 +201,7 @@ verify_config_packages
 
 popd
 
-verify_device_overlay
 [ -e "$GITHUB_WORKSPACE/files" ] && cp -r "$GITHUB_WORKSPACE/files" openwrt/files
-[ -f openwrt/files/etc/smartdns/ui/smartdns.db ] && chmod 600 openwrt/files/etc/smartdns/ui/smartdns.db
 [ -e "$GITHUB_WORKSPACE/$CONFIG_FILE" ] && cp "$GITHUB_WORKSPACE/$CONFIG_FILE" openwrt/.config
 chmod +x "$DIY_P2_SH"
 
@@ -230,37 +218,10 @@ verify_config_packages
 # Section 6: Package Fixes
 # ============================================================
 
-# Set GOPROXY for Go modules (fix frp build)
+# Set Go module resolution policy for selected serial package builds.
 export GOPROXY=https://goproxy.cn,https://goproxy.io,direct
 export GONOSUMCHECK=*
 export GOSUMDB=off
-
-# Persist the exact dynamic inputs in the firmware. This keeps the "latest"
-# policy auditable and identifies the actual commit even when a local cache was used.
-write_build_provenance() {
-  local file="files/etc/build-provenance" component artifact zt_feed="feeds/packages/net/zerotier"
-  mkdir -p "$(dirname "$file")"
-  {
-    echo "format=1"
-    echo "openwrt.commit=$(git rev-parse HEAD)"
-    echo "openwrt.branch=$REPO_BRANCH"
-    [ -f "$zt_feed/Makefile" ] && echo "zerotier.version=$(sed -n 's/^PKG_VERSION:=//p' "$zt_feed/Makefile" | head -1)"
-    for component in feeds/packages feeds/luci feeds/routing feeds/telephony feeds/video \
-      package/emortal/luci-app-openclash package/emortal/smartdns feeds/luci/themes/luci-theme-argon; do
-      if [ -d "$component/.git" ]; then
-        echo "${component//\//.}.commit=$(git -C "$component" rev-parse HEAD)"
-      fi
-    done
-    for artifact in \
-      package/emortal/luci-app-openclash/root/etc/openclash/core/clash_meta \
-      package/emortal/luci-app-openclash/root/etc/openclash/GeoIP.dat \
-      package/emortal/luci-app-openclash/root/etc/openclash/Model.bin; do
-      [ -f "$artifact" ] && echo "${artifact##*/}.sha256=$(sha256sum "$artifact" | awk '{print $1}')"
-    done
-  } > "$file"
-  chmod 0644 "$file"
-}
-write_build_provenance
 
 
 # ============================================================
@@ -307,7 +268,7 @@ echo "✅ target toolchain installed"
 # ============================================================
 
 # Pre-compile python3 host tooling (needed by meson for apk/host build)
-# Without this, frp pre-compile can trigger apk/host which needs python3 host via meson.
+# A selected serial package can trigger apk/host, which needs python3 host via meson.
 # feeds install symlinks: feeds/packages/lang/python/python3 -> package/feeds/packages/python3
 if ls package/feeds/packages/python3/Makefile 2>/dev/null; then
   echo "=== Pre-compiling python3 host tooling (for meson/apk) ==="
@@ -320,25 +281,26 @@ if ls package/feeds/packages/python3/Makefile 2>/dev/null; then
   echo "✅ python3 host build done"
 fi
 
-# Go packages (frp) have intermittent parallel build
-# race conditions with -j16 due to shared Go module cache.
-# Pre-compile them with -j1 so the main -j16 build skips them.
-echo "=== Pre-compiling Go packages with -j1 ==="
-for go_pkg in frp; do
-  # Only pre-compile packages actually needed (check if any =y entry references this package)
-  if ! grep '=y' .config 2>/dev/null | grep -qi "$go_pkg"; then
-    echo "Skipping $go_pkg (not enabled in .config)"
-    continue
+# Selected packages may have shared-cache races under the parallel main build.
+# Devices declare their build targets in openwrt-device.conf; the runner only
+# validates and serializes those declared targets.
+echo "=== Pre-compiling selected packages with -j1 ==="
+for build_target in ${SERIAL_BUILD_TARGETS:-}; do
+  case "$build_target" in
+    package/*) ;;
+    *) echo "❌ invalid SERIAL_BUILD_TARGETS entry: $build_target"; exit 1 ;;
+  esac
+  if [ ! -f "$build_target/Makefile" ]; then
+    echo "❌ selected build target is unavailable: $build_target"
+    exit 1
   fi
-  if [ -d "package/feeds/packages/$go_pkg" ]; then
-    echo "Pre-compiling $go_pkg with -j1..."
-    if ! make "package/feeds/packages/$go_pkg/compile" -j1 V=s; then
-      echo "WARNING: $go_pkg failed, retrying..."
-      make "package/feeds/packages/$go_pkg/compile" -j1 V=s || { echo "❌ $go_pkg failed after retry"; exit 1; }
-    fi
+  echo "Pre-compiling $build_target with -j1..."
+  if ! make "$build_target/compile" -j1 V=s; then
+    echo "WARNING: $build_target failed, retrying..."
+    make "$build_target/compile" -j1 V=s || { echo "❌ $build_target failed after retry"; exit 1; }
   fi
 done
-echo "=== Go packages pre-compilation done ==="
+echo "=== Selected package pre-compilation done ==="
 
 # ============================================================
 # Section 10: Main Build

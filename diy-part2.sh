@@ -210,7 +210,43 @@ configure_build_performance() {
 	fi
 }
 
+validate_device_overlay() {
+	local frpc_config=files/etc/config/frpc
+
+	[ -f "$frpc_config" ] || return 0
+	if grep -Eq "^[[:space:]]*option[[:space:]]+proxy_protocol_version[[:space:]]+['\"]?disable" "$frpc_config"; then
+		echo "❌ FRPC 0.69 does not support proxy_protocol_version 'disable'"
+		return 1
+	fi
+	echo "✅ Device overlay validation passed"
+}
+
+write_custom_build_provenance() {
+	local file=files/etc/build-provenance component artifact zt_feed=feeds/packages/net/zerotier
+
+	mkdir -p "$(dirname "$file")"
+	{
+		echo "format=1"
+		echo "openwrt.commit=$(git rev-parse HEAD)"
+		echo "openwrt.branch=${OPENWRT_REF:-$(git rev-parse --abbrev-ref HEAD)}"
+		[ -f "$zt_feed/Makefile" ] && echo "zerotier.version=$(sed -n 's/^PKG_VERSION:=//p' "$zt_feed/Makefile" | head -1)"
+		for component in feeds/packages feeds/luci feeds/routing feeds/telephony feeds/video \
+			package/emortal/luci-app-openclash package/emortal/smartdns feeds/luci/themes/luci-theme-argon; do
+			[ -d "$component/.git" ] && echo "${component//\//.}.commit=$(git -C "$component" rev-parse HEAD)"
+		done
+		for artifact in \
+			package/emortal/luci-app-openclash/root/etc/openclash/core/clash_meta \
+			package/emortal/luci-app-openclash/root/etc/openclash/GeoIP.dat \
+			package/emortal/luci-app-openclash/root/etc/openclash/Model.bin; do
+			[ -f "$artifact" ] && echo "${artifact##*/}.sha256=$(sha256sum "$artifact" | awk '{print $1}')"
+		done
+	} > "$file"
+	chmod 0644 "$file"
+}
+
 sed -i 's/192.168.1.1/192.168.2.1/g' package/base-files/files/bin/config_generate
+validate_device_overlay || exit 1
+[ -f files/etc/smartdns/ui/smartdns.db ] && chmod 600 files/etc/smartdns/ui/smartdns.db
 configure_dropbear
 install_luci_theme
 deploy_base_rootfs_tools
@@ -1173,3 +1209,4 @@ if [ -f "$GITHUB_WORKSPACE/openwrt-device.conf" ]; then
 fi
 
 # UPnP friendly_name remains device-owned in files/etc/config/upnpd.
+write_custom_build_provenance
