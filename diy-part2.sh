@@ -10,9 +10,9 @@
 # Description: OpenWrt DIY script part 2 (After Update feeds)
 #
 
-# Modify default IP
-sed -i 's/192.168.1.1/192.168.2.1/g' package/base-files/files/bin/config_generate
-
+# =============================================================================
+# Build constants and download helpers
+# =============================================================================
 LUCI_BRANCH=master
 Arch="amd64"
 CPU_MODEL="${Arch}-v3"
@@ -43,71 +43,80 @@ install_mihomo_latest() {
 	install -m 0755 "${archive%.gz}" package/emortal/luci-app-openclash/root/etc/openclash/core/clash_meta
 }
 
-# ============================================================
-# Dropbear: remove DirectInterface 'lan' restriction (SSH on all interfaces)
-# ============================================================
-# Remove DirectInterface restriction AND deduplicate option enable
-# (source file has 2x option enable '1'; keep only the first)
-sed -i \
-	-e '/option _direct/d' \
-	-e '/option DirectInterface/d' \
-	-e '0,/^[[:space:]]*option enable '\''1'\''$/b' \
-	-e '/^[[:space:]]*option enable '\''1'\''$/d' \
-	package/network/services/dropbear/files/dropbear.config
-
-rm -rf feeds/luci/themes/luci-theme-argon
-git clone --depth 1 -b "$LUCI_BRANCH" https://github.com/jerrykuku/luci-theme-argon.git feeds/luci/themes/luci-theme-argon || {
-	echo "❌ luci-theme-argon clone failed"
-	exit 1
+# =============================================================================
+# Shared build customizations
+# =============================================================================
+configure_dropbear() {
+	sed -i \
+		-e '/option _direct/d' \
+		-e '/option DirectInterface/d' \
+		-e '0,/^[[:space:]]*option enable '\''1'\''$/b' \
+		-e '/^[[:space:]]*option enable '\''1'\''$/d' \
+		package/network/services/dropbear/files/dropbear.config
 }
-[ -f feeds/luci/themes/luci-theme-argon/Makefile ] || {
-	echo "❌ luci-theme-argon Makefile is missing after clone"
-	exit 1
+
+install_luci_theme() {
+	rm -rf feeds/luci/themes/luci-theme-argon
+	git clone --depth 1 -b "$LUCI_BRANCH" https://github.com/jerrykuku/luci-theme-argon.git feeds/luci/themes/luci-theme-argon || {
+		echo "❌ luci-theme-argon clone failed"
+		exit 1
+	}
+	[ -f feeds/luci/themes/luci-theme-argon/Makefile ] || {
+		echo "❌ luci-theme-argon Makefile is missing after clone"
+		exit 1
+	}
+	sed -i "s/\$(TOPDIR)\/luci.mk/\$(TOPDIR)\/feeds\/luci\/luci.mk/g" feeds/luci/themes/luci-theme-argon/Makefile
 }
-sed -i "s/\$(TOPDIR)\/luci.mk/\$(TOPDIR)\/feeds\/luci\/luci.mk/g" feeds/luci/themes/luci-theme-argon/Makefile
 
+deploy_base_rootfs_tools() {
+	for script in check_smartdns_connect.sh check_openclash_connect.sh check_wan_connect.sh \
+		reset_get_img.sh reset_latest.sh reset_offline.sh reset_upload.sh; do
+		cp "$GITHUB_WORKSPACE/scripts/$script" package/base-files/files/etc/
+		chmod +x "package/base-files/files/etc/$script"
+	done
 
+	cp "$GITHUB_WORKSPACE/scripts/verify_rootfs.sh" package/base-files/files/etc/verify_rootfs.sh
+	chmod +x package/base-files/files/etc/verify_rootfs.sh
+	cp "$GITHUB_WORKSPACE/scripts/rootfs-integrity-check" package/base-files/files/etc/init.d/rootfs-integrity-check
+	chmod +x package/base-files/files/etc/init.d/rootfs-integrity-check
+}
 
-for script in check_smartdns_connect.sh check_openclash_connect.sh check_wan_connect.sh \
-							reset_get_img.sh reset_latest.sh reset_offline.sh reset_upload.sh; do
-	cp "$GITHUB_WORKSPACE/scripts/$script" package/base-files/files/etc/
-	chmod +x "package/base-files/files/etc/$script"
-done
+configure_firstboot_defaults() {
+	local defaults=package/emortal/default-settings/files/99-default-settings
 
-cp "$GITHUB_WORKSPACE/scripts/verify_rootfs.sh" package/base-files/files/etc/verify_rootfs.sh
-chmod +x package/base-files/files/etc/verify_rootfs.sh
-cp "$GITHUB_WORKSPACE/scripts/rootfs-integrity-check" package/base-files/files/etc/init.d/rootfs-integrity-check
-chmod +x package/base-files/files/etc/init.d/rootfs-integrity-check
-sed -i '/^exit 0$/i /etc/init.d/rootfs-integrity-check start' package/emortal/default-settings/files/99-default-settings
+	sed -i '/^exit 0$/i /etc/init.d/rootfs-integrity-check start' "$defaults"
+	sed -i '/^exit 0$/i\if ! uci -q get network.globals.multipath >/dev/null; then uci -q set network.globals.multipath="1"; uci -q commit network; fi' "$defaults"
 
-# Base firmware first-boot default. Preserve an explicit existing choice.
-sed -i '/^exit 0$/i\if ! uci -q get network.globals.multipath >/dev/null; then uci -q set network.globals.multipath="1"; uci -q commit network; fi' package/emortal/default-settings/files/99-default-settings
+	# Optional checks are advertised by Base; device cron overlays choose activation.
+	for cron_script in check_smartdns_connect.sh check_openclash_connect.sh check_wan_connect.sh; do
+		sed -i '/exit 0/i\if ! grep -q "/etc/'"$cron_script"'" /etc/crontabs/root 2>/dev/null; then echo "#*/5 * * * * /etc/'"$cron_script"'" >> /etc/crontabs/root; fi' "$defaults"
+	done
 
-# Advertise optional health checks in generic firmware. Device cron overlays
-# choose which checks are actually enabled.
-for cron_script in check_smartdns_connect.sh check_openclash_connect.sh check_wan_connect.sh; do
-	sed -i '/exit 0/i\if ! grep -q "/etc/'"$cron_script"'" /etc/crontabs/root 2>/dev/null; then echo "#*/5 * * * * /etc/'"$cron_script"'" >> /etc/crontabs/root; fi' package/emortal/default-settings/files/99-default-settings
-done
+	sed -i '/commit luci/i\set luci.main.mediaurlbase="/luci-static/argon"' "$defaults"
+	sed -i '/^exit 0$/i uci -q add_list uhttpd.main.listen_https="0.0.0.0:443"' "$defaults"
+	sed -i '/^exit 0$/i uci -q add_list uhttpd.main.listen_https="[::]:443"' "$defaults"
+	sed -i '/^exit 0$/i uci -q commit uhttpd' "$defaults"
+	sed -i '/^exit 0$/i uci set firewall.@defaults[0].flow_offloading="1"' "$defaults"
+	sed -i '/^exit 0$/i uci commit firewall' "$defaults"
+	sed -i '/^exit 0$/i sysctl -qw net.ipv4.tcp_congestion_control=bbr || true' "$defaults"
+	sed -i '/^exit 0$/i grep -qxF "net.ipv4.tcp_congestion_control=bbr" /etc/sysctl.conf || echo "net.ipv4.tcp_congestion_control=bbr" >> /etc/sysctl.conf' "$defaults"
+}
 
-sed -i '/commit luci/i\set luci.main.mediaurlbase="/luci-static/argon"' package/emortal/default-settings/files/99-default-settings
+configure_application_defaults() {
+	sed -i "s/uci -q set openclash.config.enable=0/uci -q set openclash.config.enable=\$(cat \/etc\/config\/openclash | grep -m 1 \"option enable\" | cut -d: -f2 | awk '{ print \$3}' | cut -d \"'\" -f 2)/g" package/emortal/luci-app-openclash/root/etc/uci-defaults/luci-openclash
+	sed -i "s|option command '.*'|option command '/bin/login -f root'|" feeds/packages/utils/ttyd/files/ttyd.config
+}
 
-# Keep HTTP available for existing LAN and FRP clients, and also provision
-# LuCI's OpenSSL listener for direct authenticated LAN access.
-sed -i '/^exit 0$/i uci -q add_list uhttpd.main.listen_https="0.0.0.0:443"' package/emortal/default-settings/files/99-default-settings
-sed -i '/^exit 0$/i uci -q add_list uhttpd.main.listen_https="[::]:443"' package/emortal/default-settings/files/99-default-settings
-sed -i '/^exit 0$/i uci -q commit uhttpd' package/emortal/default-settings/files/99-default-settings
+sed -i 's/192.168.1.1/192.168.2.1/g' package/base-files/files/bin/config_generate
+configure_dropbear
+install_luci_theme
+deploy_base_rootfs_tools
+configure_firstboot_defaults
+configure_application_defaults
 
-# Software flow offloading + Fullcone NAT (turboacc replacement)
-sed -i '/^exit 0$/i uci set firewall.@defaults[0].flow_offloading="1"' package/emortal/default-settings/files/99-default-settings
-sed -i '/^exit 0$/i uci commit firewall' package/emortal/default-settings/files/99-default-settings
-sed -i '/^exit 0$/i sysctl -qw net.ipv4.tcp_congestion_control=bbr || true' package/emortal/default-settings/files/99-default-settings
-sed -i '/^exit 0$/i grep -qxF "net.ipv4.tcp_congestion_control=bbr" /etc/sysctl.conf || echo "net.ipv4.tcp_congestion_control=bbr" >> /etc/sysctl.conf' package/emortal/default-settings/files/99-default-settings
-
-sed -i "s/uci -q set openclash.config.enable=0/uci -q set openclash.config.enable=\$(cat \/etc\/config\/openclash | grep -m 1 \"option enable\" | cut -d: -f2 | awk '{ print \$3}' | cut -d \"'\" -f 2)/g" package/emortal/luci-app-openclash/root/etc/uci-defaults/luci-openclash
-
-sed -i "s|option command '.*'|option command '/bin/login -f root'|" feeds/packages/utils/ttyd/files/ttyd.config
-
-# (Type-C / USB-C support removed - BIOS hides pinctrl, unlikely to work)
+# =============================================================================
+# OpenClash default configuration
+# =============================================================================
 
 echo '
 
@@ -821,6 +830,10 @@ config rule_providers
 
 
 ' >package/emortal/luci-app-openclash/root/etc/config/openclash
+
+# =============================================================================
+# OpenClash core and rule data
+# =============================================================================
 mkdir -p package/emortal/luci-app-openclash/root/etc/openclash/core
 if ${CLASH_META_REPOS_VERNESONG}; then
 	CLASH_CORE_TMP=$(mktemp -d)
@@ -839,6 +852,10 @@ else
 fi
 download_required "https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download/geoip.dat" package/emortal/luci-app-openclash/root/etc/openclash/GeoIP.dat "GeoIP data"
 download_required "https://github.com/vernesong/mihomo/releases/download/LightGBM-Model/Model-large.bin" package/emortal/luci-app-openclash/root/etc/openclash/Model.bin "Mihomo model"
+
+# =============================================================================
+# SmartDNS default configuration
+# =============================================================================
 mkdir -p files/etc/config
 echo '
 
@@ -1027,9 +1044,9 @@ config ip-rule
 
 ' >files/etc/config/smartdns
 
-# ============================================================
-# firmware_version (dynamic, generated at build time)
-# ============================================================
+# =============================================================================
+# Build metadata and device configuration
+# =============================================================================
 FW_DATE=$(date +%Y%m%d)
 FW_HASH=$(git -C "$GITHUB_WORKSPACE" rev-parse --short HEAD 2>/dev/null || echo "dev")
 if ! git -C "$GITHUB_WORKSPACE" diff --quiet --ignore-submodules --; then
@@ -1049,6 +1066,4 @@ if [ -f "$GITHUB_WORKSPACE/openwrt-device.conf" ]; then
 	echo "✅ openwrt-device.conf → /etc/"
 fi
 
-# ============================================================
-# UPnP: friendly_name is configured per-device via files/etc/config/upnpd in device repos (NUC8/ZBOX)
-# ============================================================
+# UPnP friendly_name remains device-owned in files/etc/config/upnpd.

@@ -10,10 +10,14 @@
 # Description: OpenWrt DIY script part 1 (Before Update feeds)
 #
 
+# =============================================================================
+# Build inputs
+# =============================================================================
 OPENCLASH_BRANCH=dev
 
-# ============================================================
-# cache_clone — 通用 GitHub 克隆 + 本地缓存回退
+# =============================================================================
+# Source acquisition helper
+# cache_clone - GitHub clone with an explicitly opt-in local cache fallback.
 #
 # 优先 git clone，失败时 fallback 到本地缓存。
 # BUILD_CACHE_DIR 有值时启用缓存（device fork openwrt-device.conf）。
@@ -26,7 +30,7 @@ OPENCLASH_BRANCH=dev
 #
 # sparse 克隆（monorepo 取子目录）:
 #   cache_clone "luci-app-openclash" "https://..." "dev" "package/..." "luci-app-openclash"
-# ============================================================
+# =============================================================================
 cache_clone() {
   local name="$1" url="$2" branch="$3" target="$4" sparse="${5:-}"
   local cache="${BUILD_CACHE_DIR:+"$BUILD_CACHE_DIR/$name"}"
@@ -77,6 +81,9 @@ cache_clone() {
   fi
 }
 
+# =============================================================================
+# Third-party package sources
+# =============================================================================
 # 1. luci-theme-argon（luci-app-argon-config 依赖的主题）
 cache_clone "luci-theme-argon" \
   "https://github.com/jerrykuku/luci-theme-argon.git" \
@@ -93,8 +100,9 @@ cache_clone "luci-app-openclash" \
   "$OPENCLASH_BRANCH" "package/emortal/luci-app-openclash" \
   "luci-app-openclash"
 
-
-
+# =============================================================================
+# Optional SmartDNS enhancement with feed fallback
+# =============================================================================
 # 4. PikuZheng/smartdns（增强 fork，额外 bugfix + Web UI）
 #    Release tag, source and UI asset must describe the same release. Do not
 #    fall back to master or a pinned UI asset when release discovery fails.
@@ -311,8 +319,10 @@ if ! install_pikuzheng_smartdns; then
   echo "⚠️ smartdns: PikuZheng source unavailable; using ImmortalWrt feed smartdns, smartdns-ui and luci-app-smartdns"
 fi
 
-
-# 6. OpenClash Ruby 4.0 + Psych YAML 兼容性修复
+# =============================================================================
+# OpenClash runtime compatibility
+# =============================================================================
+# 5. OpenClash Ruby 4.0 + Psych YAML 兼容性修复
 #    ImmortalWrt Ruby 4.0 的 Psych YAML 库需要显式 require stringio
 #    否则 OpenClash 所有 Ruby YAML 解析脚本崩溃:
 #    Load File Failed,【uninitialized constant Psych::StringIO】
