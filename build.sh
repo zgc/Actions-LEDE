@@ -167,35 +167,6 @@ done
 [ "$feeds_updated" -eq 1 ] || { echo "❌ feeds update failed after 3 attempts"; exit 1; }
 ./scripts/feeds install -a || { echo "❌ feeds install failed"; exit 1; }
 
-# Remove feeds symlinks that conflict with custom (emortal) packages
-# Ensures custom versions under package/emortal/ always win cleanly
-for pkg_dir in package/emortal/*/; do
-  pkg_name="$(basename "$pkg_dir")"
-  # Only target symlinks (feeds install artifacts)
-  find package/feeds -maxdepth 3 -type l -name "$pkg_name" 2>/dev/null | while read -r link; do
-    rm -f "$link"
-    echo "✅ Removed conflicting feeds symlink: $link"
-  done
-done
-
-# The PikuZheng SmartDNS service replaces the upstream package, whose package
-# metadata also claims luci-app-smartdns.  Keep one LuCI definition by copying
-# the current feed UI beside the custom service package before defconfig.
-if [ -d package/emortal/smartdns ]; then
-  if [ ! -d feeds/luci/applications/luci-app-smartdns ]; then
-    echo "❌ luci-app-smartdns source is missing from the LuCI feed"
-    exit 1
-  fi
-  rm -rf package/emortal/luci-app-smartdns
-  cp -a feeds/luci/applications/luci-app-smartdns package/emortal/luci-app-smartdns
-  # The feed package uses a relative include path.  It becomes invalid after
-  # relocating the package under package/emortal, so make it buildroot-relative.
-  sed -i 's|include ../../luci.mk|include $(TOPDIR)/feeds/luci/luci.mk|' \
-    package/emortal/luci-app-smartdns/Makefile
-  rm -f package/feeds/luci/luci-app-smartdns
-  echo "✅ luci-app-smartdns: paired with custom SmartDNS"
-fi
-
 # ============================================================
 # Section 5: Config
 # ============================================================
@@ -291,25 +262,6 @@ write_build_provenance() {
 }
 write_build_provenance
 
-
-# ============================================================
-# Section 7: Build Performance Optimizations
-# ============================================================
-
-# Disable Python3 host PGO (saves ~8 min per build)
-# Host Python3 is only a build tool — PGO provides zero benefit to firmware quality
-PY3_FEED=feeds/packages/lang/python/python3
-if [ -f "$PY3_FEED/Makefile" ]; then
-  if grep -q -- '--enable-optimizations' "$PY3_FEED/Makefile"; then
-    sed -i 's/--enable-optimizations/--disable-optimizations/' "$PY3_FEED/Makefile"
-    echo "✅ python3 host: PGO disabled (--enable-optimizations → --disable-optimizations)"
-  else
-    echo "✅ python3 host: PGO already disabled"
-  fi
-fi
-
-# RTL8157 optional PHY firmware is not yet distributed by linux-firmware.
-# Do not inject an unverified local file or mutate the kernel driver at build time.
 
 # ============================================================
 # Section 8: Download

@@ -165,13 +165,60 @@ configure_feed_package_fixes() {
 	fi
 }
 
+configure_custom_packages() {
+	local pkg_dir pkg_name link
+
+	# Feed installation creates package symlinks.  The repository-owned package
+	# implementation must take precedence when both provide the same name.
+	for pkg_dir in package/emortal/*/; do
+		[ -d "$pkg_dir" ] || continue
+		pkg_name="$(basename "$pkg_dir")"
+		find package/feeds -maxdepth 3 -type l -name "$pkg_name" 2>/dev/null | while IFS= read -r link; do
+			rm -f "$link"
+			echo "✅ Removed conflicting feeds symlink: $link"
+		done
+	done
+
+	# The PikuZheng SmartDNS service replaces the upstream package, whose
+	# metadata also claims luci-app-smartdns.  Pair it with one current LuCI UI.
+	if [ -d package/emortal/smartdns ]; then
+		if [ ! -d feeds/luci/applications/luci-app-smartdns ]; then
+			echo "❌ luci-app-smartdns source is missing from the LuCI feed"
+			return 1
+		fi
+		rm -rf package/emortal/luci-app-smartdns
+		cp -a feeds/luci/applications/luci-app-smartdns package/emortal/luci-app-smartdns
+		sed -i 's|include ../../luci.mk|include $(TOPDIR)/feeds/luci/luci.mk|' \
+			package/emortal/luci-app-smartdns/Makefile
+		rm -f package/feeds/luci/luci-app-smartdns
+		echo "✅ luci-app-smartdns: paired with custom SmartDNS"
+	fi
+}
+
+configure_build_performance() {
+	local py3_feed=feeds/packages/lang/python/python3
+
+	# Python is a host-only build dependency; PGO adds time without changing the
+	# generated firmware.
+	if [ -f "$py3_feed/Makefile" ] && grep -q -- '--enable-optimizations' "$py3_feed/Makefile"; then
+		sed -i 's/--enable-optimizations/--disable-optimizations/' "$py3_feed/Makefile"
+		grep -q -- '--disable-optimizations' "$py3_feed/Makefile" || {
+			echo "❌ python3 host PGO setting was not updated"
+			return 1
+		}
+		echo "✅ python3 host: PGO disabled"
+	fi
+}
+
 sed -i 's/192.168.1.1/192.168.2.1/g' package/base-files/files/bin/config_generate
 configure_dropbear
 install_luci_theme
 deploy_base_rootfs_tools
 configure_firstboot_defaults
 configure_application_defaults
-configure_feed_package_fixes
+configure_feed_package_fixes || exit 1
+configure_custom_packages || exit 1
+configure_build_performance || exit 1
 
 # =============================================================================
 # OpenClash default configuration
