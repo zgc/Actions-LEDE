@@ -80,24 +80,6 @@ cp "$GITHUB_WORKSPACE/files/etc/init.d/rootfs-integrity-check" package/base-file
 chmod +x package/base-files/files/etc/init.d/rootfs-integrity-check
 sed -i '/^exit 0$/i /etc/init.d/rootfs-integrity-check start' package/emortal/default-settings/files/99-default-settings
 
-# MPTCP is available in the selected kernel. Enable it globally and mark the
-# common IPv4 WAN as eligible; device overlays keep ownership of port mapping.
-NETWORK_CONFIG=files/etc/config/network
-if [ -f "$NETWORK_CONFIG" ]; then
-	if ! awk '/^config globals / { found=1 } END { exit !found }' "$NETWORK_CONFIG"; then
-		echo "❌ Missing config globals in $NETWORK_CONFIG"
-		exit 1
-	fi
-	if ! awk '/^config globals / { section=1; next } /^config / { section=0 } section && /^[[:space:]]*option[[:space:]]+multipath[[:space:]]/ { found=1 } END { exit !found }' "$NETWORK_CONFIG"; then
-		sed -i "/^config globals /a\\\toption multipath '1'" "$NETWORK_CONFIG"
-	fi
-	awk '/^config globals / { globals=1 } END { exit !globals }' "$NETWORK_CONFIG" || {
-		echo "❌ MPTCP defaults require a globals section in $NETWORK_CONFIG"
-		exit 1
-	}
-	echo "✅ MPTCP enabled globally"
-fi
-
 for cron_script in check_smartdns_connect.sh check_openclash_connect.sh check_wan_connect.sh; do
 	sed -i '/exit 0/i\if ! grep -q "/etc/'"$cron_script"'" /etc/crontabs/root 2>/dev/null; then echo "#*/5 * * * * /etc/'"$cron_script"'" >> /etc/crontabs/root; fi' package/emortal/default-settings/files/99-default-settings
 done
