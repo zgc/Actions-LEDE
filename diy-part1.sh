@@ -96,49 +96,56 @@ cache_clone "luci-app-openclash" \
 
 
 # 4. PikuZheng/smartdns（增强 fork，额外 bugfix + Web UI）
-#    自动检测最新 release 版本，确保 C 源码与 .so 版本同步
-SM_TAG="master"
+#    Release tag, source and UI asset must describe the same release. Do not
+#    fall back to master or a pinned UI asset when release discovery fails.
+SM_TAG=""
 SM_VERSION=""
-SM_UI_VER_FALLBACK="1.2026.v48.1.13"
+SM_UI_FILE=""
+SM_UI_URL=""
 
 echo "=== Checking latest PikuZheng/smartdns release ==="
 for i in 1 2 3; do
-  _tag=$(curl -sL --connect-timeout 5 \
+  _release=$(curl --fail --silent --show-error --location --connect-timeout 5 \
     "https://api.github.com/repos/PikuZheng/smartdns/releases?per_page=10" 2>/dev/null | \
-    python3 -c "
-import sys, json
+    python3 -c '
+import json
+import sys
+
 try:
-    for r in json.load(sys.stdin):
-        t = r.get('tag_name', '')
-        if '_with_ui' in t:
-            print(t)
-            break
-except: pass
-" 2>/dev/null)
-  if [ -n "$_tag" ]; then
-    SM_TAG="$_tag"
-    SM_VERSION="${_tag%_with_ui}"
-    echo "✅ smartdns: latest release $SM_VERSION (tag: $SM_TAG)"
+    for release in json.load(sys.stdin):
+        tag = release.get("tag_name", "")
+        if release.get("draft") or release.get("prerelease") or not tag.endswith("_with_ui"):
+            continue
+        version = tag.removesuffix("_with_ui")
+        wanted = f"smartdns_with_ui.{version}.x86_64.ipk"
+        for asset in release.get("assets", []):
+            if asset.get("name") == wanted and asset.get("browser_download_url"):
+                print("\t".join((tag, version, wanted, asset["browser_download_url"]))
+                sys.exit(0)
+except (ValueError, TypeError):
+    pass
+
+sys.exit(1)
+' 2>/dev/null)
+  if [ -n "$_release" ]; then
+    IFS=$'\t' read -r SM_TAG SM_VERSION SM_UI_FILE SM_UI_URL <<< "$_release"
+    echo "✅ smartdns: latest compatible release $SM_VERSION (tag: $SM_TAG)"
     break
   fi
-  [ $i -lt 3 ] && echo "⚠️ Retrying release check ($i)..." && sleep 2
+  [ "$i" -lt 3 ] && echo "⚠️ Retrying release check ($i)..." && sleep 2
 done
 
-if [ -z "$SM_VERSION" ]; then
-  echo "⚠️ smartdns: API unreachable, using master + pinned .so ($SM_UI_VER_FALLBACK)"
-  SM_VERSION="$SM_UI_VER_FALLBACK"
+if [ -z "$SM_TAG" ] || [ -z "$SM_VERSION" ] || [ -z "$SM_UI_FILE" ] || [ -z "$SM_UI_URL" ]; then
+  echo "❌ smartdns: unable to discover a compatible source tag and x86_64 UI asset"
+  exit 1
 fi
 
-# 4a. Download pre-built smartdns_with_ui ipk (libsmartdns_ui.so + wwwroot)
-#     ⚠️ 必须在版本 sanitization 之前构建 URL！因为 release tag 保留 v 前缀
+# 4a. Download the verified pre-built smartdns UI asset (.so + wwwroot).
 _sm_root="$(pwd)"
 _sm_ui_tmp="/tmp/smartdns-ui-$$"
 rm -rf "$_sm_ui_tmp"
-if [ -n "$SM_VERSION" ]; then
-  SM_UI_FILE="smartdns_with_ui.${SM_VERSION}.x86_64.ipk"
-  SM_UI_URL="https://github.com/PikuZheng/smartdns/releases/download/${SM_VERSION}_with_ui/${SM_UI_FILE}"
-  SM_UI_RETRY=0
-  until [ $SM_UI_RETRY -ge 3 ]; do
+SM_UI_RETRY=0
+until [ "$SM_UI_RETRY" -ge 3 ]; do
     rm -rf "$_sm_ui_tmp"
     mkdir -p "$_sm_ui_tmp"
     cd "$_sm_ui_tmp"
@@ -171,11 +178,7 @@ if [ -n "$SM_VERSION" ]; then
     cd "$_sm_root"
     SM_UI_RETRY=$((SM_UI_RETRY+1))
     sleep 2
-  done
-  if [ "$SM_UI_RETRY" -ge 3 ]; then
-    echo "⚠️ smartdns-ui: all retries exhausted, building without Web UI"
-  fi
-fi
+done
 
 # smartdns-ui is selected by config.seed. Do not produce a package that merely
 # exists in the manifest while its shared object or web assets are absent.
