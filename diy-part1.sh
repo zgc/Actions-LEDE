@@ -98,6 +98,8 @@ cache_clone "luci-app-openclash" \
 # 4. PikuZheng/smartdns（增强 fork，额外 bugfix + Web UI）
 #    Release tag, source and UI asset must describe the same release. Do not
 #    fall back to master or a pinned UI asset when release discovery fails.
+#    The ImmortalWrt feed remains the compatible fallback.
+install_pikuzheng_smartdns() (
 SM_TAG=""
 SM_VERSION=""
 SM_UI_FILE=""
@@ -128,7 +130,7 @@ sys.exit(1)
 
 if [ -z "$_release" ]; then
   echo "❌ smartdns: unable to discover a compatible source tag and x86_64 UI asset"
-  exit 1
+  return 1
 fi
 IFS=$'\t' read -r SM_TAG SM_VERSION SM_UI_FILE SM_UI_URL <<< "$_release"
 echo "✅ smartdns: latest compatible release $SM_VERSION (tag: $SM_TAG)"
@@ -141,21 +143,21 @@ mkdir -p "$_sm_ui_tmp"
 cd "$_sm_ui_tmp"
 curl --fail --show-error --retry 5 --retry-delay 2 --location "$SM_UI_URL" -o "$SM_UI_FILE" || {
   echo "❌ smartdns-ui asset download failed"
-  exit 1
+  return 1
 }
 SM_UI_SIZE=$(stat -c%s "$SM_UI_FILE" 2>/dev/null || echo 0)
-[ "$SM_UI_SIZE" -gt 100000 ] || { echo "❌ smartdns-ui asset is too small ($SM_UI_SIZE bytes)"; exit 1; }
+[ "$SM_UI_SIZE" -gt 100000 ] || { echo "❌ smartdns-ui asset is too small ($SM_UI_SIZE bytes)"; return 1; }
 (ar x "$SM_UI_FILE" 2>/dev/null || tar xzf "$SM_UI_FILE" 2>/dev/null) || {
   echo "❌ smartdns-ui asset extraction failed"
-  exit 1
+  return 1
 }
 if [ -f data.tar.gz ]; then
-  tar xzf data.tar.gz || { echo "❌ smartdns-ui data extraction failed"; exit 1; }
+  tar xzf data.tar.gz || { echo "❌ smartdns-ui data extraction failed"; return 1; }
 elif [ -f data.tar.xz ]; then
-  tar xJf data.tar.xz || { echo "❌ smartdns-ui data extraction failed"; exit 1; }
+  tar xJf data.tar.xz || { echo "❌ smartdns-ui data extraction failed"; return 1; }
 else
   echo "❌ smartdns-ui asset has no data archive"
-  exit 1
+  return 1
 fi
 rm -f "$SM_UI_FILE" control.tar.gz debian-binary
 cd "$_sm_root"
@@ -165,7 +167,7 @@ cd "$_sm_root"
 if [ ! -f "$_sm_ui_tmp/usr/lib/smartdns_ui.so" ] || \
    [ ! -d "$_sm_ui_tmp/usr/share/smartdns/wwwroot" ]; then
   echo "❌ smartdns-ui assets are incomplete; refusing to build an empty UI package"
-  exit 1
+  return 1
 fi
 
 # Sanitize version: apk mkpkg rejects 'v' prefix in version components (e.g. .v48)
@@ -195,7 +197,7 @@ for attempt in 1 2 3 4 5; do
 done
 if [ "$sm_ok" != true ]; then
   echo "❌ smartdns clone failed after 5 attempts"
-  exit 1
+  return 1
 fi
 
 # Generate smartdns + smartdns-ui OpenWrt package Makefile
@@ -301,6 +303,13 @@ echo "✅ smartdns: generated OpenWrt package Makefile"
 
 # luci-app-smartdns 使用 ImmortalWrt feed 版本，此处不重复生成
 echo "✅ smartdns: ready"
+return 0
+)
+
+if ! install_pikuzheng_smartdns; then
+  rm -rf package/emortal/smartdns
+  echo "⚠️ smartdns: PikuZheng source unavailable; using ImmortalWrt feed smartdns, smartdns-ui and luci-app-smartdns"
+fi
 
 
 # 6. OpenClash Ruby 4.0 + Psych YAML 兼容性修复
