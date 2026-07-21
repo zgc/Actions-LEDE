@@ -80,6 +80,20 @@ save_build_caches() {
   done
 }
 
+remove_declared_build_paths() {
+  local paths="$1" path
+
+  for path in $paths; do
+    case "$path" in
+      build_dir/*)
+        case "$path" in *..*|*//* ) echo "❌ unsafe build cleanup path: $path"; return 1 ;; esac
+        rm -rf -- $path
+        ;;
+      *) echo "❌ invalid build cleanup path: $path"; return 1 ;;
+    esac
+  done
+}
+
 restore_build_caches() {
   [ -z "$BUILD_CACHE_DIR" ] && return 0
   local tgt="${1:-openwrt}"
@@ -306,12 +320,9 @@ echo "=== Selected package pre-compilation done ==="
 # Section 10: Main Build
 # ============================================================
 
-# Clean stale squashfs and target-dir caches to force prepare_rootfs
-# to re-apply the files/ overlay. Without this, -j parallel builds
-# may skip target-dir-% (which calls prepare_rootfs) and use a cached
-# squashfs that lacks custom files.
-rm -f build_dir/target-x86_64_musl/linux-x86_64/root.squashfs
-rm -rf build_dir/target-x86_64_musl/linux-x86_64/target-dir-*
+# Clean device-declared stale rootfs caches to force prepare_rootfs to re-apply
+# the files overlay.  The path list is kept out of the generic build runner.
+remove_declared_build_paths "${OVERLAY_CACHE_CLEAN_PATHS:-}" || exit 1
 
 echo "=== Stale squashfs/target-dir cleaned ==="
 
@@ -344,12 +355,7 @@ if [ $BUILD_RC -ne 0 ]; then
       *) echo "❌ invalid RETRY_CLEAN_TARGETS entry: $clean_target"; exit 1 ;;
     esac
   done
-  for clean_path in ${RETRY_CLEAN_PATHS:-}; do
-    case "$clean_path" in
-      build_dir/*) rm -rf -- $clean_path ;;
-      *) echo "❌ invalid RETRY_CLEAN_PATHS entry: $clean_path"; exit 1 ;;
-    esac
-  done
+  remove_declared_build_paths "${RETRY_CLEAN_PATHS:-}" || exit 1
   make -j$(nproc) V=s
   BUILD_RC=$?
 fi
