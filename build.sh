@@ -12,7 +12,7 @@
 # Section 1: Git Configuration
 # ============================================================
 
-GITHUB_WORKSPACE=$(cd $(dirname $0);pwd)
+GITHUB_WORKSPACE=$(cd "$(dirname "$0")" && pwd)
 # Docker bind mounts are owned by the host user while the builder runs as root.
 # Configure the concrete workspace before the reproducibility Git check below.
 git config --global --add safe.directory "$GITHUB_WORKSPACE"
@@ -134,8 +134,8 @@ fi
 # Section 4: Feeds Setup
 # ============================================================
 
-[ -e $FEEDS_CONF ] && cp $FEEDS_CONF openwrt/feeds.conf.default
-chmod +x $DIY_P1_SH
+[ -e "$FEEDS_CONF" ] && cp "$FEEDS_CONF" openwrt/feeds.conf.default
+chmod +x "$DIY_P1_SH"
 
 pushd openwrt
 # Restore feeds files deleted by previous builds (Docker volume mount persistence)
@@ -148,7 +148,7 @@ done
 # Fix: Docker root ownership on feeds
 chown -R $(stat -c '%u:%g' .) feeds/ 2>/dev/null || true
 
-if ! GITHUB_WORKSPACE=$GITHUB_WORKSPACE BUILD_CACHE_DIR=$BUILD_CACHE_DIR $GITHUB_WORKSPACE/$DIY_P1_SH; then
+if ! GITHUB_WORKSPACE="$GITHUB_WORKSPACE" BUILD_CACHE_DIR="$BUILD_CACHE_DIR" "$GITHUB_WORKSPACE/$DIY_P1_SH"; then
   echo "❌ diy-part1.sh failed"
   exit 1
 fi
@@ -231,7 +231,7 @@ verify_device_overlay() {
   echo "✅ Device overlay validation passed"
 }
 
-[ -e $GITHUB_WORKSPACE/$CONFIG_FILE ] && cp $GITHUB_WORKSPACE/$CONFIG_FILE .config
+[ -e "$GITHUB_WORKSPACE/$CONFIG_FILE" ] && cp "$GITHUB_WORKSPACE/$CONFIG_FILE" .config
 refresh_package_metadata
 make defconfig || { echo "❌ defconfig failed"; exit 1; }
 verify_config_packages
@@ -239,13 +239,13 @@ verify_config_packages
 popd
 
 verify_device_overlay
-[ -e $GITHUB_WORKSPACE/files ] && cp -r $GITHUB_WORKSPACE/files openwrt/files
+[ -e "$GITHUB_WORKSPACE/files" ] && cp -r "$GITHUB_WORKSPACE/files" openwrt/files
 [ -f openwrt/files/etc/smartdns/ui/smartdns.db ] && chmod 600 openwrt/files/etc/smartdns/ui/smartdns.db
-[ -e $GITHUB_WORKSPACE/$CONFIG_FILE ] && cp $GITHUB_WORKSPACE/$CONFIG_FILE openwrt/.config
-chmod +x $DIY_P2_SH
+[ -e "$GITHUB_WORKSPACE/$CONFIG_FILE" ] && cp "$GITHUB_WORKSPACE/$CONFIG_FILE" openwrt/.config
+chmod +x "$DIY_P2_SH"
 
 pushd openwrt
-if ! GITHUB_WORKSPACE=$GITHUB_WORKSPACE $GITHUB_WORKSPACE/$DIY_P2_SH; then
+if ! GITHUB_WORKSPACE="$GITHUB_WORKSPACE" "$GITHUB_WORKSPACE/$DIY_P2_SH"; then
   echo "❌ diy-part2.sh failed"
   exit 1
 fi
@@ -303,7 +303,7 @@ sed -i 's/CONFIG_PACKAGE_luci-app-zerotier=m/CONFIG_PACKAGE_luci-app-zerotier=y/
 # Resolve ZeroTier once per build. Set ZEROTIER_VERSION to a concrete release
 # in openwrt-device.conf to keep a reproducible version instead of latest.
 ZT_FEED=feeds/packages/net/zerotier
-if [ -f $ZT_FEED/Makefile ]; then
+if [ -f "$ZT_FEED/Makefile" ]; then
   ZT_VER_CURRENT=$(grep '^PKG_VERSION:=' "$ZT_FEED/Makefile" | head -1 | cut -d= -f2)
   ZT_VER_TARGET="${ZEROTIER_VERSION:-latest}"
   if [ "$ZT_VER_TARGET" = "latest" ]; then
@@ -328,8 +328,8 @@ if [ -f $ZT_FEED/Makefile ]; then
       esac
     fi
     if [ "${#ZT_HASH}" -eq 64 ]; then
-      sed -i "s/^PKG_VERSION:=$ZT_VER_CURRENT/PKG_VERSION:=$ZT_VER_TARGET/" $ZT_FEED/Makefile
-      sed -i "s/^PKG_HASH:=.*/PKG_HASH:=$ZT_HASH/" $ZT_FEED/Makefile
+      sed -i "s/^PKG_VERSION:=$ZT_VER_CURRENT/PKG_VERSION:=$ZT_VER_TARGET/" "$ZT_FEED/Makefile"
+      sed -i "s/^PKG_HASH:=.*/PKG_HASH:=$ZT_HASH/" "$ZT_FEED/Makefile"
       echo "✅ zerotier updated $ZT_VER_CURRENT → $ZT_VER_TARGET (hash: ${ZT_HASH:0:12}...)"
     else
       echo "⚠️ zerotier source verification failed; keeping $ZT_VER_CURRENT unchanged"
