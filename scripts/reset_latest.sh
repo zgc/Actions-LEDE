@@ -1,7 +1,9 @@
 #!/bin/bash
-set -euo pipefail
 
+# Device configuration may include build-host variables that are unset on the router.
+set +u
 [ -f /etc/openwrt-device.conf ] && . /etc/openwrt-device.conf
+set -euo pipefail
 
 IMG_DIR=${IMG_DIR:-/tmp}
 DISK=${DISK:-sda}
