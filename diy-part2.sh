@@ -80,16 +80,8 @@ cp "$GITHUB_WORKSPACE/scripts/rootfs-integrity-check" package/base-files/files/e
 chmod +x package/base-files/files/etc/init.d/rootfs-integrity-check
 sed -i '/^exit 0$/i /etc/init.d/rootfs-integrity-check start' package/emortal/default-settings/files/99-default-settings
 
-# Base firmware first-boot default. Keep the script source in scripts/, then
-# install it into the image's uci-defaults directory.
-MPTCP_DEFAULTS_SCRIPT="$GITHUB_WORKSPACE/scripts/mptcp-defaults.sh"
-[ -f "$MPTCP_DEFAULTS_SCRIPT" ] || {
-	echo "❌ Missing MPTCP defaults script: $MPTCP_DEFAULTS_SCRIPT"
-	exit 1
-}
-mkdir -p package/base-files/files/etc/uci-defaults
-cp "$MPTCP_DEFAULTS_SCRIPT" package/base-files/files/etc/uci-defaults/90-base-mptcp-defaults
-chmod +x package/base-files/files/etc/uci-defaults/90-base-mptcp-defaults
+# Base firmware first-boot default. Preserve an explicit existing choice.
+sed -i '/^exit 0$/i\if ! uci -q get network.globals.multipath >/dev/null; then uci -q set network.globals.multipath="1"; uci -q commit network; fi' package/emortal/default-settings/files/99-default-settings
 
 for cron_script in check_smartdns_connect.sh check_openclash_connect.sh check_wan_connect.sh; do
 	sed -i '/exit 0/i\if ! grep -q "/etc/'"$cron_script"'" /etc/crontabs/root 2>/dev/null; then echo "#*/5 * * * * /etc/'"$cron_script"'" >> /etc/crontabs/root; fi' package/emortal/default-settings/files/99-default-settings

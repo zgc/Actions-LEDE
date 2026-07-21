@@ -1,7 +1,0 @@
-#!/bin/sh
-
-# Apply the Base default only when the device has no explicit MPTCP choice.
-if ! uci -q get network.globals.multipath >/dev/null; then
-	uci -q set network.globals.multipath='1'
-	uci -q commit network
-fi
