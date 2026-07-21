@@ -1047,11 +1047,6 @@ if [ -f "$GITHUB_WORKSPACE/openwrt-device.conf" ]; then
 	echo "✅ openwrt-device.conf → /etc/"
 fi
 
-cat > package/base-files/files/etc/rc.local <<'RCLOCAL'
-#!/bin/sh
-exit 0
-RCLOCAL
-
 # ============================================================
 # UPnP: friendly_name is configured per-device via files/etc/config/upnpd in device repos (NUC8/ZBOX)
 # ============================================================
