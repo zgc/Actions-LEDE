@@ -181,6 +181,16 @@ for attempt in 1 2 3; do
 done
 [ "$feeds_updated" -eq 1 ] || { echo "❌ feeds update failed after 3 attempts"; exit 1; }
 ./scripts/feeds install -a || { echo "❌ feeds install failed"; exit 1; }
+for feed_package in ${FEED_FORCE_PACKAGES:-}; do
+  case "$feed_package" in
+    ''|*[!A-Za-z0-9_.+-]*) echo "❌ invalid FEED_FORCE_PACKAGES entry: $feed_package"; exit 1 ;;
+    *) ;;
+  esac
+  ./scripts/feeds install -f "$feed_package" || {
+    echo "❌ forced feed package install failed: $feed_package"
+    exit 1
+  }
+done
 
 # ============================================================
 # Section 5: Config
