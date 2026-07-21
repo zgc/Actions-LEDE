@@ -8,13 +8,13 @@ Build [ImmortalWrt](https://github.com/immortalwrt/immortalwrt) firmware with Gi
 - **GitHub Actions** workflow for automated builds (push to trigger)
 - **Local Docker build** — reproducible, same environment as Actions, with optional build cache
 - **Custom script hooks** — `diy-part1.sh` (pre-feeds) and `diy-part2.sh` (post-feeds) for custom packages/config
-- **Device-specific overrides** — use `openwrt-device.conf` to set `RELEASE_NAME` and `BUILD_CACHE_DIR` per device
+- **Base/device inheritance** — Base owns generic build logic; each device repository rebases Base and owns its device configuration
 
 ## Quick Start
 
 ### 1. Fork & configure
 
-Fork this repository, then push a custom `config.seed` and optional `files/` overlay directory.
+Use this repository for generic package selection and build logic. Device repositories rebase this branch, then provide their own `config.seed`, `openwrt-device.conf`, `files/` overlay, and topology-specific scripts.
 
 ### 2. Trigger a build
 
@@ -49,7 +49,7 @@ Output goes to `release/` — `.img.gz` firmware plus `.manifest` and checksums.
 - **`config.seed`** — package selection (start from ImmortalWrt `make menuconfig`)
 - **`diy-part1.sh`** — clone custom packages, patch feeds before `feeds update`
 - **`diy-part2.sh`** — UCI defaults, config templates, package fixes after `feeds install`
-- **`files/`** — overlay directory copied verbatim into the firmware image
+- **Device `files/`** — device-owned overlay copied verbatim into that device's firmware image; Base deliberately has no `files/` directory
 
 ## Files
 
@@ -61,7 +61,7 @@ Output goes to `release/` — `.img.gz` firmware plus `.manifest` and checksums.
 | `config.seed` | OpenWrt `.config` template (`make defconfig` input) |
 | `docker/docker-compose.yml` | Local build services (builder, clean, build) |
 | `docker/docker-build.sh` | Script inside the container to launch `build.sh` |
-| `files/` | Root overlay for firmware image (optional) |
+| Device `files/` | Device-owned root overlay; intentionally absent from Base |
 
 ## Project Structure
 
@@ -75,7 +75,6 @@ actions-lede/
 ├── docker/
 │   ├── docker-compose.yml # builder / clean / build services
 │   └── docker-build.sh    # Container entrypoint
-├── files/                 # Firmware root overlay
 └── scripts/               # Custom build-time helpers
 ```
 
@@ -85,6 +84,7 @@ actions-lede/
 - **Clean toolchain**: `docker compose up clean` removes stale toolchain artifacts (build_dir/toolchain*, staging_dir/toolchain*) — run after switching build paths or when toolchain gets corrupted.
 - **Full reset**: stop containers, delete `openwrt/`, then `docker compose up build` for a from-scratch build.
 - The expanded `.config` is saved as `config.buildinfo` after each successful build.
+- **Device alignment**: in a device repository, run `git fetch base main && git rebase base/main`; resolve only device-owned differences and verify with `git merge-base --is-ancestor base/main HEAD`.
 
 ## Credits
 
