@@ -97,7 +97,6 @@ sed -i '/^exit 0$/i uci -q commit uhttpd' package/emortal/default-settings/files
 
 # Software flow offloading + Fullcone NAT (turboacc replacement)
 sed -i '/^exit 0$/i uci set firewall.@defaults[0].flow_offloading="1"' package/emortal/default-settings/files/99-default-settings
-sed -i '/^exit 0$/i uci set firewall.@zone[1].fullcone="1"' package/emortal/default-settings/files/99-default-settings
 sed -i '/^exit 0$/i uci commit firewall' package/emortal/default-settings/files/99-default-settings
 sed -i '/^exit 0$/i sysctl -qw net.ipv4.tcp_congestion_control=bbr || true' package/emortal/default-settings/files/99-default-settings
 sed -i '/^exit 0$/i grep -qxF "net.ipv4.tcp_congestion_control=bbr" /etc/sysctl.conf || echo "net.ipv4.tcp_congestion_control=bbr" >> /etc/sysctl.conf' package/emortal/default-settings/files/99-default-settings
