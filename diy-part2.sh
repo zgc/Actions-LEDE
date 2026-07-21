@@ -83,6 +83,12 @@ sed -i '/^exit 0$/i /etc/init.d/rootfs-integrity-check start' package/emortal/de
 # Base firmware first-boot default. Preserve an explicit existing choice.
 sed -i '/^exit 0$/i\if ! uci -q get network.globals.multipath >/dev/null; then uci -q set network.globals.multipath="1"; uci -q commit network; fi' package/emortal/default-settings/files/99-default-settings
 
+# Advertise optional health checks in generic firmware. Device cron overlays
+# choose which checks are actually enabled.
+for cron_script in check_smartdns_connect.sh check_openclash_connect.sh check_wan_connect.sh; do
+	sed -i '/exit 0/i\if ! grep -q "/etc/'"$cron_script"'" /etc/crontabs/root 2>/dev/null; then echo "#*/5 * * * * /etc/'"$cron_script"'" >> /etc/crontabs/root; fi' package/emortal/default-settings/files/99-default-settings
+done
+
 sed -i '/commit luci/i\set luci.main.mediaurlbase="/luci-static/argon"' package/emortal/default-settings/files/99-default-settings
 
 # Keep HTTP available for existing LAN and FRP clients, and also provision
