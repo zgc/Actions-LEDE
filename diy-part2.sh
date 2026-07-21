@@ -91,14 +91,11 @@ if [ -f "$NETWORK_CONFIG" ]; then
 	if ! awk '/^config globals / { section=1; next } /^config / { section=0 } section && /^[[:space:]]*option[[:space:]]+multipath[[:space:]]/ { found=1 } END { exit !found }' "$NETWORK_CONFIG"; then
 		sed -i "/^config globals /a\\\toption multipath '1'" "$NETWORK_CONFIG"
 	fi
-	if ! awk '/^config interface '\''wan'\''/ { section=1; next } /^config / { section=0 } section && /^[[:space:]]*option[[:space:]]+multipath[[:space:]]/ { found=1 } END { exit !found }' "$NETWORK_CONFIG"; then
-		sed -i "/^config interface 'wan'$/a\\\toption multipath '1'" "$NETWORK_CONFIG"
-	fi
-	awk '/^config globals / { globals=1 } /^config interface '\''wan'\''/ { wan=1 } END { exit !(globals && wan) }' "$NETWORK_CONFIG" || {
-		echo "❌ MPTCP defaults require globals and wan sections in $NETWORK_CONFIG"
+	awk '/^config globals / { globals=1 } END { exit !globals }' "$NETWORK_CONFIG" || {
+		echo "❌ MPTCP defaults require a globals section in $NETWORK_CONFIG"
 		exit 1
 	}
-	echo "✅ MPTCP enabled globally; wan is MPTCP eligible"
+	echo "✅ MPTCP enabled globally"
 fi
 
 for cron_script in check_smartdns_connect.sh check_openclash_connect.sh check_wan_connect.sh; do
