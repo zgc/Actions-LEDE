@@ -49,7 +49,6 @@ fi
 # Normalize a fresh clone and an existing worktree through the same immutable
 # source selection path. `git pull <commit>` can merge unexpectedly.
 pushd "$SOURCE_DIR"
-rm -rf files package
 if [ -n "$REPO_COMMIT" ]; then
 	git -c http.version=HTTP/1.1 fetch --depth 1 origin "$REPO_COMMIT" || {
 		echo "❌ unable to fetch requested OpenWrt commit: $REPO_COMMIT"
@@ -62,4 +61,8 @@ else
 	}
 fi
 git reset --hard FETCH_HEAD
+# Remove only generated DIY overlays after the requested upstream revision has
+# been selected. This avoids deleting a reusable source tree before a fetch
+# failure, while preserving tracked upstream files and build caches.
+git clean -fdx -- files package
 popd
