@@ -1167,8 +1167,8 @@ config ip-rule
 # Build metadata and device configuration
 # =============================================================================
 FW_DATE=$(date +%Y%m%d)
-FW_HASH=$(git -C "$GITHUB_WORKSPACE" rev-parse --short HEAD 2>/dev/null || echo "dev")
-if ! git -C "$GITHUB_WORKSPACE" diff --quiet --ignore-submodules --; then
+FW_HASH=$(git -c safe.directory="$GITHUB_WORKSPACE" -C "$GITHUB_WORKSPACE" rev-parse --short HEAD 2>/dev/null || echo "dev")
+if ! git -c safe.directory="$GITHUB_WORKSPACE" -C "$GITHUB_WORKSPACE" diff --quiet --ignore-submodules --; then
 	FW_HASH="${FW_HASH}-dirty"
 fi
 FW_DEVICE=$(grep '^RELEASE_NAME=' "$GITHUB_WORKSPACE/openwrt-device.conf" 2>/dev/null | cut -d= -f2 | tr -d '"')
