@@ -101,8 +101,13 @@ for feed_dir in feeds/*/; do
     git -C "$feed_dir" checkout -- . 2>/dev/null
   fi
 done
-# Fix: Docker root ownership on feeds
-chown -R $(stat -c '%u:%g' .) feeds/ 2>/dev/null || true
+# A previous Docker build can leave root-owned feed files. Avoid a recursive
+# chown on every build when the bind-mounted tree already has matching owners.
+workspace_uid=$(stat -c '%u' .)
+workspace_gid=$(stat -c '%g' .)
+if find feeds -xdev \( ! -uid "$workspace_uid" -o ! -gid "$workspace_gid" \) -print -quit 2>/dev/null | grep -q .; then
+  chown -R "$workspace_uid:$workspace_gid" feeds/ || exit 1
+fi
 
 if ! GITHUB_WORKSPACE="$GITHUB_WORKSPACE" BUILD_CACHE_DIR="$BUILD_CACHE_DIR" "$GITHUB_WORKSPACE/$DIY_P1_SH"; then
   echo "❌ diy-part1.sh failed"
@@ -174,7 +179,6 @@ export GOSUMDB=off
 
 make download -j8 || make download -j1 V=s || { echo "❌ make download failed"; exit 1; }
 find dl -not -path "dl/go-mod-cache/*" -size -1024c -type f -exec rm -f {} \;
-find dl -not -path "dl/go-mod-cache/*" -size 0 -type f -exec rm -f {} \;
 
 # Build and install host tools (sed, autoconf, automake, m4, libtool, etc.)
 # Required before any host package compile — make download only downloads, doesn't build
