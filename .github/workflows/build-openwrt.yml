@@ -98,16 +98,10 @@ jobs:
     - name: Load device config
       run: |
         if [ -f openwrt-device.conf ]; then
-          echo "Loading openwrt-device.conf..."
-          cat openwrt-device.conf
-          source openwrt-device.conf
-          if [ -n "$RELEASE_NAME" ]; then
-            echo "RELEASE_NAME=$RELEASE_NAME" >> $GITHUB_ENV
-            echo "✅ Device: $RELEASE_NAME"
-          fi
-          if [ -n "${ZEROTIER_VERSION:-}" ]; then
-            echo "ZEROTIER_VERSION=$ZEROTIER_VERSION" >> $GITHUB_ENV
-          fi
+          RELEASE_NAME=$(sed -n 's/^RELEASE_NAME=\([A-Za-z0-9._-]*\)$/\1/p' openwrt-device.conf | tail -1)
+          [ -n "$RELEASE_NAME" ] || { echo "::error::openwrt-device.conf has no valid RELEASE_NAME"; exit 1; }
+          echo "RELEASE_NAME=$RELEASE_NAME" >> "$GITHUB_ENV"
+          echo "✅ Device: $RELEASE_NAME"
         else
           echo "No openwrt-device.conf found, using default RELEASE_NAME"
         fi
