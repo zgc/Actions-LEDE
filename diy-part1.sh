@@ -40,8 +40,11 @@ cache_clone() {
 
   for attempt in 1 2 3; do
     if [ -n "$sparse" ]; then
-      local tmpdir="/tmp/cache-${name}"
-      rm -rf "$tmpdir" && mkdir -p "$tmpdir"
+      local tmpdir
+      tmpdir=$(mktemp -d "${TMPDIR:-/tmp}/cache-${name}.XXXXXX") || {
+        echo "❌ ${name}: failed to create sparse-clone temporary directory"
+        exit 1
+      }
       if git clone --depth 1 -b "$branch" --filter=blob:none --sparse \
            "$url" --no-checkout "$tmpdir" && \
          (cd "$tmpdir" && git sparse-checkout init --cone \
