@@ -1,35 +1,32 @@
 #!/bin/bash
 #
-# Actions-LEDE — Generic OpenWrt/ImmortalWrt Build Script
-# Base: ImmortalWrt master
+# Actions-LEDE：通用 OpenWrt/ImmortalWrt 构建脚本
+# 基座：ImmortalWrt master
 #
-# Device-specific overrides: create openwrt-device.conf in the same directory
-# Example openwrt-device.conf:
+# 设备专用覆盖项：在同目录创建 openwrt-device.conf
+# openwrt-device.conf 示例：
 #   RELEASE_NAME=nuc8
 #
 
 # ============================================================
-# Section 1: Git Configuration
+# 第一部分：Git 配置
 # ============================================================
 
 GITHUB_WORKSPACE=$(cd "$(dirname "$0")" && pwd)
 cd "$GITHUB_WORKSPACE" || exit 1
-# Docker bind mounts are owned by the host user while the builder runs as root.
-# Scope the safe-directory exception to the reproducibility Git check below.
-# A firmware must be reproducible from a committed source tree.  Device
-# repositories frequently contain local experiments, and building from one
-# makes the resulting image impossible to audit or reproduce.
+# Docker bind mount 由宿主用户持有；仅在下方可复现性检查中局部声明安全目录。
+# 固件必须可由已提交的源码树复现。设备仓库常含本地试验，直接从脏工作树构建将无法审计或复现。
 if [ "${ALLOW_DIRTY_BUILD:-0}" != "1" ] && [ -n "$(git -c safe.directory="$GITHUB_WORKSPACE" -C "$GITHUB_WORKSPACE" status --porcelain)" ]; then
   echo "ERROR: refusing to build from a dirty work tree. Commit, stash, or set ALLOW_DIRTY_BUILD=1 intentionally."
   exit 1
 fi
-# Source device-specific overrides
+# 读取设备专用覆盖项
 [ -f "$GITHUB_WORKSPACE/openwrt-device.conf" ] && source "$GITHUB_WORKSPACE/openwrt-device.conf"
-# Package customization runs in diy-part2.sh; retain the device version pin.
+# 软件包定制在 diy-part2.sh 中完成；保留设备的版本固定配置。
 export ZEROTIER_VERSION
 
 # ============================================================
-# Section 2: Variables
+# 第二部分：变量
 # ============================================================
 
 RELEASE_DIR=${RELEASE_DIR:-$GITHUB_WORKSPACE/release}
@@ -44,15 +41,15 @@ CONFIG_FILE="config.seed"
 DIY_P1_SH="diy-part1.sh"
 DIY_P2_SH="diy-part2.sh"
 
-# Build cache directory for Docker volume persistence (staging_dir, build_dir, dl)
-# Mount a Docker volume here to reuse cross-compiler toolchain between container runs
+# Docker 持久化构建缓存目录（staging_dir、build_dir、dl）。
+# 将 Docker volume 挂载至此，可在容器间复用交叉编译工具链。
 BUILD_CACHE_DIR=${BUILD_CACHE_DIR:-}
 
 # ============================================================
-# Section 2.1: Build Prerequisites
+# 第二部分之一：构建前置条件
 # ============================================================
 
-# python3-setuptools is required by ImmortalWrt's u-boot prereq check
+# ImmortalWrt 的 u-boot 前置检查需要 python3-setuptools。
 if ! python3 -c "import setuptools" 2>/dev/null; then
   echo "⚠️ python3-setuptools missing, installing..."
   apt-get update -qq && apt-get install -y -qq python3-setuptools > /dev/null 2>&1
@@ -74,28 +71,28 @@ remove_declared_build_paths() {
 }
 
 # ============================================================
-# Section 3: Clone/Pull OpenWrt
+# 第三部分：获取 OpenWrt 源码
 # ============================================================
 
 "$GITHUB_WORKSPACE/scripts/build/prepare_source.sh" \
   "$GITHUB_WORKSPACE" "$REPO_URL" "$REPO_BRANCH" "$REPO_COMMIT" "$BUILD_CACHE_DIR"
 
 # ============================================================
-# Section 4: Feeds Setup
+# 第四部分：配置 feeds
 # ============================================================
 
 [ -e "$FEEDS_CONF" ] && cp "$FEEDS_CONF" openwrt/feeds.conf.default
 
 pushd openwrt
-# Restore feeds files deleted by previous builds (Docker volume mount persistence)
+# 恢复上次构建删除的 feed 文件（Docker volume 持久化场景）。
 for feed_dir in feeds/*/; do
   if [ -d "$feed_dir/.git" ]; then
     rm -f "$feed_dir/.git/index.lock"
     git -C "$feed_dir" checkout -- . 2>/dev/null
   fi
 done
-# A previous Docker build can leave root-owned feed files. Avoid a recursive
-# chown on every build when the bind-mounted tree already has matching owners.
+# 旧 Docker 构建可能留下 root 所有的 feed 文件；仅在属主不匹配时递归修正，
+# 避免每次构建都执行 chown。
 workspace_uid=$(stat -c '%u' .)
 workspace_gid=$(stat -c '%g' .)
 if find feeds -xdev \( ! -uid "$workspace_uid" -o ! -gid "$workspace_gid" \) -print -quit 2>/dev/null | grep -q .; then
@@ -129,12 +126,11 @@ for feed_package in ${FEED_FORCE_PACKAGES:-}; do
 done
 
 # ============================================================
-# Section 5: Config
+# 第五部分：配置
 # ============================================================
 
 [ -e "$GITHUB_WORKSPACE/$CONFIG_FILE" ] && cp "$GITHUB_WORKSPACE/$CONFIG_FILE" .config
-# This pass validates feed packages, including the SmartDNS fallback, before DIY
-# creates repository-owned package overrides.
+# 在 DIY 创建仓库自有软件包覆盖前，先验证 feed 软件包（含 SmartDNS 回退路径）。
 "$GITHUB_WORKSPACE/scripts/build/resolve_config.sh" \
   "$GITHUB_WORKSPACE/openwrt" "$GITHUB_WORKSPACE/$CONFIG_FILE" "before diy-part2.sh"
 
@@ -148,24 +144,24 @@ if ! GITHUB_WORKSPACE="$GITHUB_WORKSPACE" "$GITHUB_WORKSPACE/$DIY_P2_SH"; then
   echo "❌ diy-part2.sh failed"
   exit 1
 fi
-# DIY adds package definitions and the device overlay, so resolve again before
-# downloading or compiling. This is intentionally separate from the feed pass.
+# DIY 会新增软件包定义和设备 overlay，因此下载和编译前必须再次解析配置；
+# 该步骤与 feed 验证刻意分离。
 "$GITHUB_WORKSPACE/scripts/build/resolve_config.sh" \
   "$GITHUB_WORKSPACE/openwrt" "$GITHUB_WORKSPACE/$CONFIG_FILE" "after diy-part2.sh"
 
 # ============================================================
-# Section 6: Download
+# 第六部分：下载源码包
 # ============================================================
 
 make download -j8 || make download -j1 V=s || { echo "❌ make download failed"; exit 1; }
 find dl -not -path "dl/go-mod-cache/*" -size -1024c -type f -exec rm -f {} \;
 
 # ============================================================
-# Section 7: Main Build
+# 第七部分：主编译
 # ============================================================
 
-# Clean device-declared stale rootfs caches to force prepare_rootfs to re-apply
-# the files overlay.  The path list is kept out of the generic build runner.
+# 清理设备声明的过期 rootfs 缓存，强制 prepare_rootfs 重新应用 files overlay。
+# 路径列表由设备定义，不放入通用构建器。
 remove_declared_build_paths "${OVERLAY_CACHE_CLEAN_PATHS:-}" || exit 1
 
 echo "=== Stale squashfs/target-dir cleaned ==="
@@ -229,19 +225,18 @@ rm -f "$BUILD_LOG"
 trap - EXIT
 
 # ============================================================
-# Section 8: Save Config & Copy Firmware
+# 第八部分：保存配置并复制固件
 # ============================================================
 
 
-# Save expanded .config as config.buildinfo (NEVER overwrite config.seed — it's our input!)
+# 将展开后的 .config 保存为 config.buildinfo，绝不覆盖作为输入的 config.seed。
 cp -f openwrt/.config config.buildinfo || { echo "❌ failed to save config.buildinfo"; exit 1; }
 echo "✅ Saved expanded config to config.buildinfo"
 
 mkdir -p "$RELEASE_DIR" || { echo "❌ failed to create release directory"; exit 1; }
 cp -f openwrt/.config "$RELEASE_DIR/config.buildinfo" || { echo "❌ failed to save release config.buildinfo"; exit 1; }
 
-# Resolve exactly one firmware output directory. Never let a stale target
-# directory silently win because filesystem traversal happened to list it first.
+# 只解析唯一的固件输出目录，不能因文件系统遍历顺序让过期 target 目录被误用。
 mapfile -t firmware_dirs < <(find openwrt/bin/targets -type d -name "64" 2>/dev/null)
 if [ "${#firmware_dirs[@]}" -ne 1 ]; then
   mapfile -t firmware_dirs < <(find openwrt/bin/targets -mindepth 2 -maxdepth 4 -type d 2>/dev/null | grep -v '/packages$')
@@ -256,7 +251,7 @@ echo "📦 Firmware directory: $FIRMWARE_DIR"
 
 if [ -d "$FIRMWARE_DIR" ]; then
   cp -f "$FIRMWARE_DIR"/config.buildinfo "$RELEASE_DIR/${RELEASE_NAME}.target.config.buildinfo" || { echo "❌ missing target config.buildinfo"; exit 1; }
-  # Find the combined/EFI firmware image (preferred) or any .img.gz
+  # 优先查找 combined/EFI 固件镜像，其次才接受任意 .img.gz。
   mapfile -t firmware_files < <(find "$FIRMWARE_DIR" -maxdepth 1 -name "*combined*img.gz" -type f 2>/dev/null)
   if [ "${#firmware_files[@]}" -eq 0 ]; then
     mapfile -t firmware_files < <(find "$FIRMWARE_DIR" -maxdepth 1 -name "*img.gz" -type f 2>/dev/null)

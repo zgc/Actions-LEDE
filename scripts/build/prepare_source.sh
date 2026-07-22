@@ -1,5 +1,5 @@
 #!/bin/bash
-# Create or refresh the OpenWrt source tree without mixing it with build steps.
+# 创建或刷新 OpenWrt 源码树，不与构建步骤混合。
 set -euo pipefail
 
 WORKSPACE=${1:?usage: prepare_source.sh <workspace> <repo-url> <repo-branch> <repo-commit> <cache-dir>}
@@ -46,8 +46,8 @@ if [ ! -e "$SOURCE_DIR" ] || [ ! -d "$SOURCE_DIR/.git" ]; then
 	restore_build_caches
 fi
 
-# Normalize a fresh clone and an existing worktree through the same immutable
-# source selection path. `git pull <commit>` can merge unexpectedly.
+# 新克隆和已有工作树均使用同一条不可变的源码选择路径。
+# `git pull <commit>` 可能引入非预期合并，因此不使用。
 pushd "$SOURCE_DIR"
 if [ -n "$REPO_COMMIT" ]; then
 	git -c http.version=HTTP/1.1 fetch --depth 1 origin "$REPO_COMMIT" || {
@@ -61,8 +61,7 @@ else
 	}
 fi
 git reset --hard FETCH_HEAD
-# Remove only generated DIY overlays after the requested upstream revision has
-# been selected. This avoids deleting a reusable source tree before a fetch
-# failure, while preserving tracked upstream files and build caches.
+# 在选定上游版本后，仅清理 DIY 生成的 overlay。
+# 这样即使 fetch 失败也不会预先破坏可复用源码树，同时保留受跟踪的上游文件和构建缓存。
 git clean -fdx -- files package
 popd

@@ -13,7 +13,7 @@ services:
     tty: true
     command: /bin/bash
 
-  # Manual run: docker compose up clean (use before first build or after path changes)
+  # 手动执行：docker compose up clean（首次构建或构建路径变更后使用）
   clean:
     build: .
     image: actions-lede-builder:latest

@@ -1,5 +1,5 @@
 #!/bin/bash
-# Verify a firmware release assembled by build.sh before it is published.
+# 发布前验证由 build.sh 生成的固件。
 set -euo pipefail
 
 OPENWRT_DIR=${1:?usage: verify_firmware.sh <openwrt-dir> <release-dir> <release-name>}
