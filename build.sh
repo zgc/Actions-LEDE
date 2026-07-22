@@ -132,21 +132,27 @@ if [ ! -e openwrt ] || [ ! -d openwrt/.git ]; then
   fi
 
   restore_build_caches
-elif [ -z $REPO_COMMIT ]; then
-  pushd openwrt
-  rm -rf files package
-  git pull origin $REPO_BRANCH
-  git reset --hard origin/$REPO_BRANCH
-  popd
 fi
 
-if [ ! -z $REPO_COMMIT ]; then
-  pushd openwrt
-  rm -rf files package
-  git pull origin $REPO_COMMIT
-  git reset --hard $REPO_COMMIT
-  popd
+# Normalize a fresh clone and an existing worktree through the same immutable
+# source selection path. `git pull <commit>` can merge unexpectedly and a
+# fresh clone previously ignored REPO_COMMIT altogether.
+pushd openwrt
+rm -rf files package
+if [ -n "$REPO_COMMIT" ]; then
+  git fetch --depth 1 origin "$REPO_COMMIT" || {
+    echo "❌ unable to fetch requested OpenWrt commit: $REPO_COMMIT"
+    exit 1
+  }
+  git reset --hard FETCH_HEAD
+else
+  git fetch --depth 1 origin "$REPO_BRANCH" || {
+    echo "❌ unable to fetch OpenWrt branch: $REPO_BRANCH"
+    exit 1
+  }
+  git reset --hard FETCH_HEAD
 fi
+popd
 
 # ============================================================
 # Section 4: Feeds Setup

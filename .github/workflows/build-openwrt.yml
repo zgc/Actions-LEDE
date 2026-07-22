@@ -244,43 +244,22 @@ jobs:
         name: OpenWrt_bin_${{ env.DEVICE_NAME }}_${{ env.FILE_DATE }}
         path: openwrt/bin
 
-    - name: Organize files
+    - name: Publish canonical release directory
       id: organize
       if: env.UPLOAD_FIRMWARE == 'true' && !cancelled()
       run: |
         set -euo pipefail
-        mapfile -t target_dirs < <(find openwrt/bin/targets -mindepth 2 -maxdepth 2 -type d ! -name packages)
-        [ "${#target_dirs[@]}" -eq 1 ] || { echo "::error::expected exactly one target directory"; exit 1; }
-        TARGET_DIR="${target_dirs[0]}"
-        mapfile -t manifests < <(find "$TARGET_DIR" -maxdepth 1 -name '*.manifest' -type f)
-        [ "${#manifests[@]}" -eq 1 ] || { echo "::error::expected exactly one manifest"; exit 1; }
-        MANIFEST="${manifests[0]}"
-        check_dir=$(mktemp -d)
-        trap 'rm -rf "$check_dir"' EXIT
-        awk '/^Package: / { print $2 }' "$GITHUB_WORKSPACE/openwrt/tmp/.packageinfo" | sort -u > "$check_dir/buildable"
-        sed -n 's/^CONFIG_PACKAGE_\([A-Za-z0-9_-]*\)=y$/\1/p' "$GITHUB_WORKSPACE/openwrt/.config" | sort -u > "$check_dir/selected"
-        awk -F ' - ' 'NF >= 2 { print $1 }' "$MANIFEST" | sort -u > "$check_dir/manifest"
-        test -s "$check_dir/buildable" && test -s "$check_dir/selected" && test -s "$check_dir/manifest" || { echo "::error::manifest validation input is empty"; exit 1; }
-        missing_packages=""
-        while IFS= read -r package; do
-          grep -Fqx "$package" "$check_dir/manifest" || grep -Eq "^${package}([0-9]+([.-][0-9]+)*|-[0-9]+)$" "$check_dir/manifest" || missing_packages="$missing_packages $package"
-        done < <(comm -12 "$check_dir/selected" "$check_dir/buildable")
-        if [ -n "$missing_packages" ]; then
-          echo "::error::firmware manifest is missing selected packages:$missing_packages"
-          exit 1
-        fi
-        echo "Firmware manifest contains every selected package"
-        mapfile -t images < <(find "$TARGET_DIR" -maxdepth 1 -name '*combined*img.gz' -type f)
-        if [ "${#images[@]}" -eq 0 ]; then mapfile -t images < <(find "$TARGET_DIR" -maxdepth 1 -name '*img.gz' -type f); fi
-        [ "${#images[@]}" -eq 1 ] || { echo "::error::expected exactly one firmware image"; exit 1; }
-        mkdir -p $GITHUB_WORKSPACE/release
-        cp "$GITHUB_WORKSPACE/openwrt/.config" "$GITHUB_WORKSPACE/release/config.buildinfo"
-        cp "$TARGET_DIR/config.buildinfo" "$GITHUB_WORKSPACE/release/${DEVICE_NAME}.target.config.buildinfo"
-        cp "${images[0]}" "$GITHUB_WORKSPACE/release/$DEVICE_NAME.img.gz"
-        cd $GITHUB_WORKSPACE/release/
-        gzip -t "$DEVICE_NAME.img.gz"
-        md5sum "$DEVICE_NAME.img.gz" > "$DEVICE_NAME.img.gz.md5"
-        gzip -dc "$DEVICE_NAME.img.gz" | md5sum | sed "s/-/$DEVICE_NAME.img/" > "$DEVICE_NAME.img.md5"
+        release_dir="$GITHUB_WORKSPACE/release"
+        for file in \
+          config.buildinfo \
+          "${DEVICE_NAME}.target.config.buildinfo" \
+          "${DEVICE_NAME}.manifest" \
+          "${DEVICE_NAME}.img.gz" \
+          "${DEVICE_NAME}.img.gz.md5" \
+          "${DEVICE_NAME}.img.md5"; do
+          test -s "$release_dir/$file" || { echo "::error::canonical build output is missing: $file"; exit 1; }
+        done
+        gzip -t "$release_dir/${DEVICE_NAME}.img.gz"
         echo "FIRMWARE=$GITHUB_WORKSPACE/release" >> $GITHUB_ENV
         echo "status=success" >> $GITHUB_OUTPUT
 
