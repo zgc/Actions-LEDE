@@ -91,6 +91,8 @@ configure_firstboot_defaults() {
 configure_application_defaults() {
 	sed -i "s/uci -q set openclash.config.enable=0/uci -q set openclash.config.enable=\$(cat \/etc\/config\/openclash | grep -m 1 \"option enable\" | cut -d: -f2 | awk '{ print \$3}' | cut -d \"'\" -f 2)/g" package/emortal/luci-app-openclash/root/etc/uci-defaults/luci-openclash
 	sed -i "s|option command '.*'|option command '/bin/login -f root'|" feeds/packages/utils/ttyd/files/ttyd.config
+	local ttyd_init=feeds/packages/utils/ttyd/files/ttyd.init
+	[ -f "$ttyd_init" ] && sed -i 's|\${interface:+-i \$interface} ||' "$ttyd_init"
 }
 
 zerotier_source_supports_feed_patches() {
