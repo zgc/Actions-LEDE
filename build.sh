@@ -454,29 +454,6 @@ if [ -d "$FIRMWARE_DIR" ]; then
   if [ -f "$MANIFEST" ]; then
     cp -f "$MANIFEST" "$RELEASE_DIR/$RELEASE_NAME.manifest" || { echo "❌ failed to copy manifest"; exit 1; }
 
-	    # Validate every selected package that has a concrete package definition.
-	    # Some CONFIG_PACKAGE symbols are feature toggles (for example,
-	    # dnsmasq_full_dhcpv6), so derive package names from .packageinfo rather
-	    # than treating every selected symbol as a manifest package name.
-	    manifest_check_dir=$(mktemp -d) || { echo "❌ failed to create manifest check directory"; exit 1; }
-	    awk '/^Package: / { print $2 }' "$GITHUB_WORKSPACE/openwrt/tmp/.packageinfo" | sort -u > "$manifest_check_dir/buildable" && test -s "$manifest_check_dir/buildable" || { rm -rf "$manifest_check_dir"; echo "❌ package metadata is unavailable for manifest validation"; exit 1; }
-	    sed -n 's/^CONFIG_PACKAGE_\([A-Za-z0-9_-]*\)=y$/\1/p' "$GITHUB_WORKSPACE/openwrt/.config" | sort -u > "$manifest_check_dir/selected" && test -s "$manifest_check_dir/selected" || { rm -rf "$manifest_check_dir"; echo "❌ selected package list is empty"; exit 1; }
-	    awk -F ' - ' 'NF >= 2 { print $1 }' "$MANIFEST" | sort -u > "$manifest_check_dir/manifest" && test -s "$manifest_check_dir/manifest" || { rm -rf "$manifest_check_dir"; echo "❌ firmware manifest is empty"; exit 1; }
-	    missing_packages=""
-	    while IFS= read -r package; do
-	      [ -z "$package" ] && continue
-	      # ImmortalWrt appends ABI suffixes (for example libopenssl3 and
-	      # libsqlite3-0). Accept only the exact package or that numeric ABI form.
-	      if ! grep -Fqx "$package" "$manifest_check_dir/manifest" && ! grep -Eq "^${package}([0-9]+([.-][0-9]+)*|-[0-9]+)$" "$manifest_check_dir/manifest"; then
-	        missing_packages="$missing_packages $package"
-	      fi
-	    done < <(comm -12 "$manifest_check_dir/selected" "$manifest_check_dir/buildable")
-	    rm -rf "$manifest_check_dir"
-	    if [ -n "$missing_packages" ]; then
-	      echo "❌ firmware manifest is missing selected packages:$missing_packages"
-	      exit 1
-	    fi
-	    echo "✅ firmware manifest contains every selected package"
   else
     echo "❌ No manifest found in $FIRMWARE_DIR!"
     exit 1
@@ -486,51 +463,6 @@ else
   exit 1
 fi
 
-cd "$RELEASE_DIR" || exit 1
-IMG_FILE="${RELEASE_NAME}.img.gz"
-if [ -f "$IMG_FILE" ]; then
-  BASE=$(basename "$IMG_FILE" .img.gz)
-	  gzip -t "$IMG_FILE" || { echo "❌ firmware gzip integrity check failed"; exit 1; }
-
-	  # A gzip checksum only proves the image bytes are intact. Fully extract the
-	  # embedded SquashFS before publishing so a corrupt compressed block cannot
-	  # become a bootable-but-broken LuCI image.
-	  image_verify_dir=$(mktemp -d) || { echo "❌ failed to create image verification directory"; exit 1; }
-	  image_raw="$image_verify_dir/${BASE}.img"
-	  image_rootfs="$image_verify_dir/rootfs"
-	  cleanup_image_verify() { rm -rf "$image_verify_dir"; }
-	  if ! gzip -dc "$IMG_FILE" > "$image_raw"; then
-	    cleanup_image_verify
-	    echo "❌ failed to decompress firmware image for SquashFS verification"
-	    exit 1
-	  fi
-	  squashfs_offset=$(LC_ALL=C grep -abo -m 1 'hsqs' "$image_raw" | cut -d: -f1 || true)
-	  if [ -z "$squashfs_offset" ]; then
-	    cleanup_image_verify
-	    echo "❌ unable to locate SquashFS in firmware image"
-	    exit 1
-	  fi
-	  echo "🔍 Fully extracting SquashFS at offset $squashfs_offset"
-	  if ! unsquashfs -offset "$squashfs_offset" -excludes -d "$image_rootfs" "$image_raw" dev >/dev/null; then
-	    cleanup_image_verify
-	    echo "❌ firmware SquashFS extraction failed"
-	    exit 1
-	  fi
-	  for luci_asset in luci.js ui.js; do
-	    [ -s "$image_rootfs/www/luci-static/resources/$luci_asset" ] || {
-	      cleanup_image_verify
-	      echo "❌ verified SquashFS is missing LuCI asset: $luci_asset"
-	      exit 1
-	    }
-	  done
-	  cleanup_image_verify
-	  echo "✅ firmware SquashFS fully extracted and LuCI assets verified"
-
-	  md5sum "$IMG_FILE" > "${BASE}.img.gz.md5" || { echo "❌ failed to create compressed firmware MD5"; exit 1; }
-	  gzip -dc "$IMG_FILE" | md5sum | sed "s/-/${BASE}.img/" > "${BASE}.img.md5" || { echo "❌ failed to create uncompressed firmware MD5"; exit 1; }
-else
-  echo "❌ release image $IMG_FILE is missing"
-  exit 1
-fi
-ls -lh "$IMG_FILE"
-cd "$GITHUB_WORKSPACE"
+chmod +x "$GITHUB_WORKSPACE/scripts/verify_firmware.sh"
+"$GITHUB_WORKSPACE/scripts/verify_firmware.sh" openwrt "$RELEASE_DIR" "$RELEASE_NAME"
+ls -lh "$RELEASE_DIR/${RELEASE_NAME}.img.gz"
