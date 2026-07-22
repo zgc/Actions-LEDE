@@ -13,6 +13,7 @@
 # ============================================================
 
 GITHUB_WORKSPACE=$(cd "$(dirname "$0")" && pwd)
+cd "$GITHUB_WORKSPACE" || exit 1
 # Docker bind mounts are owned by the host user while the builder runs as root.
 # Configure the concrete workspace before the reproducibility Git check below.
 git config --global --add safe.directory "$GITHUB_WORKSPACE"
@@ -41,7 +42,7 @@ DEVICE_NAME=$(grep '^CONFIG_TARGET.*DEVICE.*=y' config.seed | sed -r 's/CONFIG_T
 RELEASE_NAME=${RELEASE_NAME:-${DEVICE_NAME:-firmware}}
 REPO_URL="https://github.com/immortalwrt/immortalwrt"
 REPO_BRANCH="${REPO_BRANCH:-master}"
-REPO_COMMIT=""
+REPO_COMMIT="${REPO_COMMIT:-}"
 export OPENWRT_REF="$REPO_BRANCH"
 FEEDS_CONF="feeds.conf.default"
 CONFIG_FILE="config.seed"
@@ -218,10 +219,32 @@ verify_config_packages() {
   echo "✅ Requested package selections verified"
 }
 
+resolve_config() {
+  local phase="$1"
+
+  refresh_package_metadata
+  make defconfig || {
+    echo "❌ defconfig failed during $phase"
+    return 1
+  }
+  verify_config_packages
+}
+
+drop_filesystem_caches() {
+  local phase="$1"
+
+  sync
+  if { echo 3 > /proc/sys/vm/drop_caches; } 2>/dev/null; then
+    echo "✅ dropped filesystem caches $phase"
+  else
+    echo "ℹ️ cache drop skipped $phase (not permitted by container runtime)"
+  fi
+}
+
 [ -e "$GITHUB_WORKSPACE/$CONFIG_FILE" ] && cp "$GITHUB_WORKSPACE/$CONFIG_FILE" .config
-refresh_package_metadata
-make defconfig || { echo "❌ defconfig failed"; exit 1; }
-verify_config_packages
+# This pass validates feed packages, including the SmartDNS fallback, before DIY
+# creates repository-owned package overrides.
+resolve_config "before diy-part2.sh" || exit 1
 
 popd
 
@@ -234,9 +257,9 @@ if ! GITHUB_WORKSPACE="$GITHUB_WORKSPACE" "$GITHUB_WORKSPACE/$DIY_P2_SH"; then
   echo "❌ diy-part2.sh failed"
   exit 1
 fi
-refresh_package_metadata
-make defconfig || { echo "❌ defconfig (post diy) failed"; exit 1; }
-verify_config_packages
+# DIY adds package definitions and the device overlay, so resolve again before
+# downloading or compiling. This is intentionally separate from the feed pass.
+resolve_config "after diy-part2.sh" || exit 1
 
 # ============================================================
 # Section 6: Package Fixes
@@ -252,14 +275,8 @@ export GOSUMDB=off
 # Section 8: Download
 # ============================================================
 
-# Drop caches when the kernel permits it. Docker commonly mounts this sysctl
-# read-only, so suppress that expected host-policy failure.
-sync
-if { echo 3 > /proc/sys/vm/drop_caches; } 2>/dev/null; then
-  echo "✅ dropped filesystem caches"
-else
-  echo "ℹ️ cache drop skipped (not permitted by container runtime)"
-fi
+# Docker commonly mounts this sysctl read-only; that is expected and non-fatal.
+drop_filesystem_caches "before download"
 
 make download -j8 || make download -j1 V=s || { echo "❌ make download failed"; exit 1; }
 find dl -not -path "dl/go-mod-cache/*" -size -1024c -type f -exec rm -f {} \;
@@ -336,13 +353,9 @@ remove_declared_build_paths "${OVERLAY_CACHE_CLEAN_PATHS:-}" || exit 1
 
 echo "=== Stale squashfs/target-dir cleaned ==="
 
-# Free memory before main build when the container runtime permits it.
-sync
-if { echo 3 > /proc/sys/vm/drop_caches; } 2>/dev/null; then
-  echo "✅ dropped filesystem caches before main build"
-else
-  echo "ℹ️ cache drop skipped before main build (not permitted by container runtime)"
-fi
+# The same best-effort operation is repeated at this phase because downloads and
+# serial package builds may have populated the page cache.
+drop_filesystem_caches "before main build"
 
 echo "=== Starting main build ==="
 

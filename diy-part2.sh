@@ -13,7 +13,6 @@
 # =============================================================================
 # Build constants and download helpers
 # =============================================================================
-LUCI_BRANCH=master
 Arch="amd64"
 CPU_MODEL="${Arch}-v3"
 CLASH_META_REPOS_VERNESONG=${CLASH_META_REPOS_VERNESONG:-true}
@@ -53,19 +52,6 @@ configure_dropbear() {
 		-e '0,/^[[:space:]]*option enable '\''1'\''$/b' \
 		-e '/^[[:space:]]*option enable '\''1'\''$/d' \
 		package/network/services/dropbear/files/dropbear.config
-}
-
-install_luci_theme() {
-	rm -rf feeds/luci/themes/luci-theme-argon
-	git clone --depth 1 -b "$LUCI_BRANCH" https://github.com/jerrykuku/luci-theme-argon.git feeds/luci/themes/luci-theme-argon || {
-		echo "❌ luci-theme-argon clone failed"
-		exit 1
-	}
-	[ -f feeds/luci/themes/luci-theme-argon/Makefile ] || {
-		echo "❌ luci-theme-argon Makefile is missing after clone"
-		exit 1
-	}
-	sed -i "s/\$(TOPDIR)\/luci.mk/\$(TOPDIR)\/feeds\/luci\/luci.mk/g" feeds/luci/themes/luci-theme-argon/Makefile
 }
 
 deploy_base_rootfs_tools() {
@@ -231,7 +217,7 @@ write_custom_build_provenance() {
 		echo "openwrt.branch=${OPENWRT_REF:-$(git rev-parse --abbrev-ref HEAD)}"
 		[ -f "$zt_feed/Makefile" ] && echo "zerotier.version=$(sed -n 's/^PKG_VERSION:=//p' "$zt_feed/Makefile" | head -1)"
 		for component in feeds/packages feeds/luci feeds/routing feeds/telephony feeds/video \
-			package/emortal/luci-app-openclash package/emortal/smartdns feeds/luci/themes/luci-theme-argon; do
+			package/emortal/luci-app-openclash package/emortal/luci-theme-argon package/emortal/smartdns; do
 			[ -d "$component/.git" ] && echo "${component//\//.}.commit=$(git -C "$component" rev-parse HEAD)"
 		done
 		for artifact in \
@@ -248,7 +234,6 @@ sed -i 's/192.168.1.1/192.168.2.1/g' package/base-files/files/bin/config_generat
 validate_device_overlay || exit 1
 [ -f files/etc/smartdns/ui/smartdns.db ] && chmod 600 files/etc/smartdns/ui/smartdns.db
 configure_dropbear
-install_luci_theme
 deploy_base_rootfs_tools
 configure_firstboot_defaults
 configure_application_defaults
