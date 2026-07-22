@@ -25,8 +25,8 @@ if [ "${ALLOW_DIRTY_BUILD:-0}" != "1" ] && [ -n "$(git -c safe.directory="$GITHU
 fi
 # Source device-specific overrides
 [ -f "$GITHUB_WORKSPACE/openwrt-device.conf" ] && source "$GITHUB_WORKSPACE/openwrt-device.conf"
-# Package customization runs in diy-part2.sh; retain device-declared inputs.
-export ZEROTIER_VERSION SERIAL_BUILD_TARGETS
+# Package customization runs in diy-part2.sh; retain the device version pin.
+export ZEROTIER_VERSION
 
 # Fix: Docker image now has git compiled against OpenSSL (not GnuTLS)
 # TLS workarounds no longer needed — keep postBuffer as safety net
@@ -158,85 +158,14 @@ fi
   "$GITHUB_WORKSPACE/openwrt" "$GITHUB_WORKSPACE/$CONFIG_FILE" "after diy-part2.sh"
 
 # ============================================================
-# Section 6: Package Fixes
-# ============================================================
-
-# Set Go module resolution policy for selected serial package builds.
-export GOPROXY=https://goproxy.cn,https://goproxy.io,direct
-export GONOSUMCHECK=*
-export GOSUMDB=off
-
-
-# ============================================================
-# Section 8: Download
+# Section 6: Download
 # ============================================================
 
 make download -j8 || make download -j1 V=s || { echo "❌ make download failed"; exit 1; }
 find dl -not -path "dl/go-mod-cache/*" -size -1024c -type f -exec rm -f {} \;
 
-# Build and install host tools (sed, autoconf, automake, m4, libtool, etc.)
-# Required before any host package compile — make download only downloads, doesn't build
-#
-# util-linux uses meson which requires python3 at staging_dir/host/bin/python3.
-# Symlink system python3 there temporarily; proper feeds python3 host compile
-# happens in the Go/packages section later (overwrites this symlink).
-mkdir -p staging_dir/host/bin
-if ! [ -f staging_dir/host/bin/python3 ]; then
-  ln -sf "$(which python3)" staging_dir/host/bin/python3
-  echo "✅ symlinked system python3 → staging_dir/host/bin/python3"
-fi
-echo "=== Building and installing host tools ==="
-make tools/install -j$(nproc) V=s || { echo "❌ tools/install failed"; exit 1; }
-echo "✅ host tools installed"
-
-# FRP is pre-compiled below to avoid Go's parallel-build race.  Its package
-# build needs target libgcc, which only exists after the target toolchain is
-# installed; a warm cache used to hide this ordering dependency.
-echo "=== Building and installing target toolchain ==="
-make toolchain/install -j$(nproc) V=s || { echo "❌ toolchain/install failed"; exit 1; }
-echo "✅ target toolchain installed"
-
 # ============================================================
-# Section 9: Go Packages Pre-compile
-# ============================================================
-
-# Pre-compile python3 host tooling (needed by meson for apk/host build)
-# A selected serial package can trigger apk/host, which needs python3 host via meson.
-# feeds install symlinks: feeds/packages/lang/python/python3 -> package/feeds/packages/python3
-if ls package/feeds/packages/python3/Makefile 2>/dev/null; then
-  echo "=== Pre-compiling python3 host tooling (for meson/apk) ==="
-  make package/feeds/packages/python3/host/compile -j1 V=s || { echo "❌ python3 host build failed"; exit 1; }
-  # Symlink python3 from hostpkg→host so meson cross-file can find it
-  if [ -f staging_dir/hostpkg/bin/python3 ]; then
-    ln -sf ../../hostpkg/bin/python3 staging_dir/host/bin/python3
-    echo "✅ symlinked hostpkg/bin/python3 → host/bin/python3"
-  fi
-  echo "✅ python3 host build done"
-fi
-
-# Selected packages may have shared-cache races under the parallel main build.
-# Devices declare their build targets in openwrt-device.conf; the runner only
-# validates and serializes those declared targets.
-echo "=== Pre-compiling selected packages with -j1 ==="
-for build_target in ${SERIAL_BUILD_TARGETS:-}; do
-  case "$build_target" in
-    package/*) ;;
-    *) echo "❌ invalid SERIAL_BUILD_TARGETS entry: $build_target"; exit 1 ;;
-  esac
-  if [ ! -f "$build_target/Makefile" ]; then
-    echo "❌ selected build target is unavailable: $build_target"
-    exit 1
-  fi
-  echo "Pre-compiling $build_target with -j1..."
-  if ! make "$build_target/compile" -j1 V=s; then
-    echo "WARNING: $build_target failed, retrying..."
-    make "$build_target/compile" -j1 V=s || { echo "❌ $build_target failed after retry"; exit 1; }
-  fi
-done
-echo "=== Selected package pre-compilation done ==="
-
-# ============================================================
-# Section 10: Main Build
+# Section 7: Main Build
 # ============================================================
 
 # Clean device-declared stale rootfs caches to force prepare_rootfs to re-apply
@@ -304,7 +233,7 @@ rm -f "$BUILD_LOG"
 trap - EXIT
 
 # ============================================================
-# Section 11: Save Config & Copy Firmware
+# Section 8: Save Config & Copy Firmware
 # ============================================================
 
 
