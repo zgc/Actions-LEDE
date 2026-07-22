@@ -93,34 +93,7 @@ configure_application_defaults() {
 	sed -i "s|option command '.*'|option command '/bin/login -f root'|" feeds/packages/utils/ttyd/files/ttyd.config
 }
 
-configure_feed_package_fixes() {
-	# Netdata cloud support pulls protobuf/abseil, which is incompatible with the
-	# current feed build. Disable it while retaining the local monitoring agent.
-	local netdata_feed=feeds/packages/admin/netdata
-	if [ -f "$netdata_feed/Makefile" ]; then
-		if grep -q '\-\-disable-cloud' "$netdata_feed/Makefile"; then
-			echo "✅ netdata: --disable-cloud already present"
-		else
-			sed -i 's/\t--disable-ml$/\t--disable-ml \\\n\t--disable-cloud/' "$netdata_feed/Makefile"
-			grep -q '\-\-disable-cloud' "$netdata_feed/Makefile" || {
-				echo "⚠️ netdata: --disable-cloud not added (--disable-ml pattern changed)"
-				return 1
-			}
-			echo "✅ netdata: --disable-cloud added (removes protobuf dependency)"
-		fi
-	fi
-
-	# Force gnulib's stdbool probe after configure for the current cross compiler.
-	local gnutls_feed=feeds/packages/libs/gnutls
-	if [ -f "$gnutls_feed/Makefile" ] && ! grep -q 'HAVE_STDBOOL_H' "$gnutls_feed/Makefile"; then
-		sed -i '/^define Build\/InstallDev/i define Build/Configure\n\t$$(call Build/Configure/Default)\n\t$$(SED) "s|/\\* #undef HAVE_STDBOOL_H \\*/|#define HAVE_STDBOOL_H 1|" $$(PKG_BUILD_DIR)/config.h\nendef\n' "$gnutls_feed/Makefile"
-		grep -q 'HAVE_STDBOOL_H' "$gnutls_feed/Makefile" || {
-			echo "⚠️ gnutls: HAVE_STDBOOL_H fix not applied (Makefile pattern changed)"
-			return 1
-		}
-		echo "✅ gnutls: HAVE_STDBOOL_H fix applied"
-	fi
-
+configure_zerotier() {
 	# Use latest by default while allowing a device to pin ZEROTIER_VERSION.
 	local zt_feed=feeds/packages/net/zerotier zt_current zt_target zt_hash zt_conf
 	[ -f "$zt_feed/Makefile" ] || return 0
@@ -222,7 +195,7 @@ configure_dropbear
 deploy_base_rootfs_tools
 configure_firstboot_defaults
 configure_application_defaults
-configure_feed_package_fixes || exit 1
+configure_zerotier || exit 1
 configure_custom_packages || exit 1
 
 # =============================================================================
