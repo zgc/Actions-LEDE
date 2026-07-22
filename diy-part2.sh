@@ -181,21 +181,6 @@ configure_custom_packages() {
 	fi
 }
 
-configure_build_performance() {
-	local py3_feed=feeds/packages/lang/python/python3
-
-	# Python is a host-only build dependency; PGO adds time without changing the
-	# generated firmware.
-	if [ -f "$py3_feed/Makefile" ] && grep -q -- '--enable-optimizations' "$py3_feed/Makefile"; then
-		sed -i 's/--enable-optimizations/--disable-optimizations/' "$py3_feed/Makefile"
-		grep -q -- '--disable-optimizations' "$py3_feed/Makefile" || {
-			echo "❌ python3 host PGO setting was not updated"
-			return 1
-		}
-		echo "✅ python3 host: PGO disabled"
-	fi
-}
-
 validate_device_overlay() {
 	local frpc_config=files/etc/config/frpc
 
@@ -239,7 +224,6 @@ configure_firstboot_defaults
 configure_application_defaults
 configure_feed_package_fixes || exit 1
 configure_custom_packages || exit 1
-configure_build_performance || exit 1
 
 # =============================================================================
 # OpenClash default configuration
