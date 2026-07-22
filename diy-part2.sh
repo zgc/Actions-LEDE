@@ -127,10 +127,10 @@ configure_zerotier() {
 	if [ "$zt_target" = "latest" ]; then
 		zt_target="$(curl --fail --retry 3 --retry-delay 2 --silent --show-error https://api.github.com/repos/zerotier/ZeroTierOne/releases/latest | python3 -c 'import json, sys; print(json.load(sys.stdin).get("tag_name", "").lstrip("v"))' 2>/dev/null)"
 	fi
-	case "$zt_target" in
-		[0-9]*.[0-9]*.[0-9]*) ;;
-		*) echo "WARNING: zerotier release lookup failed; keeping $zt_current"; zt_target="$zt_current" ;;
-	esac
+	if [[ ! "$zt_target" =~ ^[0-9]+(\.[0-9]+){2}([.-][0-9A-Za-z._-]+)?$ ]]; then
+		echo "WARNING: zerotier release lookup returned an invalid version; keeping $zt_current"
+		zt_target="$zt_current"
+	fi
 	if [ "$zt_current" != "$zt_target" ]; then
 		zt_tmp=$(mktemp -d) || return 1
 		zt_archive="$zt_tmp/zerotier-$zt_target.tar.gz"

@@ -148,9 +148,11 @@ echo "✅ smartdns: latest compatible release $SM_VERSION (tag: $SM_TAG)"
 
 # 4a. Download the verified pre-built smartdns UI asset (.so + wwwroot).
 _sm_root="$(pwd)"
-_sm_ui_tmp="/tmp/smartdns-ui-$$"
-rm -rf "$_sm_ui_tmp"
-mkdir -p "$_sm_ui_tmp"
+_sm_ui_tmp=$(mktemp -d "${TMPDIR:-/tmp}/smartdns-ui.XXXXXX") || {
+  echo "❌ smartdns-ui temporary directory creation failed"
+  return 1
+}
+trap 'rm -rf "$_sm_ui_tmp"' EXIT
 cd "$_sm_ui_tmp"
 curl --fail --show-error --retry 5 --retry-delay 2 --location "$SM_UI_URL" -o "$SM_UI_FILE" || {
   echo "❌ smartdns-ui asset download failed"

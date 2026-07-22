@@ -6,9 +6,9 @@
 # Usage: ./docker-build.sh {build|run|compile}
 #
 
-set -e
+set -eu
 
-SCRIPT_DIR="$(cd $(dirname $0) && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 IMAGE_NAME="actions-lede-builder"
 

@@ -12,9 +12,6 @@ on:
   workflow_dispatch:
   schedule:
     - cron: '0 */8 * * *'
-  watch:
-    types:
-      - 'started'
 
 jobs:
   merge:
@@ -24,7 +21,7 @@ jobs:
     steps:
 
     - name: Checkout
-      uses: actions/checkout@main
+      uses: actions/checkout@v4
       with:
         ref: main
         fetch-depth: 0
