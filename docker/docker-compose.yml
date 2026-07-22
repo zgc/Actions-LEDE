@@ -2,8 +2,10 @@ name: openwrt-build
 
 services:
   builder:
+    build: .
     image: actions-lede-builder:latest
     container_name: openwrt-builder
+    user: "${LOCAL_UID:-1000}:${LOCAL_GID:-1000}"
     volumes:
       - ..:/workspace
     working_dir: /workspace
@@ -13,8 +15,10 @@ services:
 
   # Manual run: docker compose up clean (use before first build or after path changes)
   clean:
+    build: .
     image: actions-lede-builder:latest
     container_name: openwrt-clean
+    user: "${LOCAL_UID:-1000}:${LOCAL_GID:-1000}"
     volumes:
       - ..:/workspace
     working_dir: /workspace
@@ -31,8 +35,10 @@ services:
     restart: "no"
 
   build:
+    build: .
     image: actions-lede-builder:latest
     container_name: openwrt-build
+    user: "${LOCAL_UID:-1000}:${LOCAL_GID:-1000}"
     volumes:
       - ..:/workspace
     working_dir: /workspace

@@ -74,6 +74,10 @@ verify_squashfs
 
 (
 	cd "$RELEASE_DIR"
-	md5sum "$RELEASE_NAME.img.gz" > "$RELEASE_NAME.img.gz.md5"
-	gzip -dc "$RELEASE_NAME.img.gz" | md5sum | sed "s/-/$RELEASE_NAME.img/" > "$RELEASE_NAME.img.md5"
+	checksum_tmp=$(mktemp ".${RELEASE_NAME}.md5.XXXXXX")
+	trap 'rm -f "$checksum_tmp"' EXIT
+	md5sum "$RELEASE_NAME.img.gz" > "$checksum_tmp"
+	mv -f "$checksum_tmp" "$RELEASE_NAME.img.gz.md5"
+	gzip -dc "$RELEASE_NAME.img.gz" | md5sum | sed "s/-/$RELEASE_NAME.img/" > "$checksum_tmp"
+	mv -f "$checksum_tmp" "$RELEASE_NAME.img.md5"
 )
