@@ -133,7 +133,7 @@ jobs:
         sudo -E apt-get clean
         sudo -E timedatectl set-timezone "$TZ"
         sudo mkdir -p /workdir
-        sudo chown $USER:$GROUPS /workdir
+        sudo chown "$USER:$(id -gn)" /workdir
         # ccache config
         mkdir -p ~/.ccache
         echo "max_size = 2.0G" >> ~/.ccache/ccache.conf
@@ -209,7 +209,6 @@ jobs:
       id: compile
       timeout-minutes: 300
       run: |
-        chmod +x ./build.sh
         ./build.sh
         echo "status=success" >> $GITHUB_OUTPUT
 

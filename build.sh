@@ -15,12 +15,11 @@
 GITHUB_WORKSPACE=$(cd "$(dirname "$0")" && pwd)
 cd "$GITHUB_WORKSPACE" || exit 1
 # Docker bind mounts are owned by the host user while the builder runs as root.
-# Configure the concrete workspace before the reproducibility Git check below.
-git config --global --add safe.directory "$GITHUB_WORKSPACE"
+# Scope the safe-directory exception to the reproducibility Git check below.
 # A firmware must be reproducible from a committed source tree.  Device
 # repositories frequently contain local experiments, and building from one
 # makes the resulting image impossible to audit or reproduce.
-if [ "${ALLOW_DIRTY_BUILD:-0}" != "1" ] && [ -n "$(git -C "$GITHUB_WORKSPACE" status --porcelain)" ]; then
+if [ "${ALLOW_DIRTY_BUILD:-0}" != "1" ] && [ -n "$(git -c safe.directory="$GITHUB_WORKSPACE" -C "$GITHUB_WORKSPACE" status --porcelain)" ]; then
   echo "ERROR: refusing to build from a dirty work tree. Commit, stash, or set ALLOW_DIRTY_BUILD=1 intentionally."
   exit 1
 fi
@@ -82,7 +81,6 @@ remove_declared_build_paths() {
 # Section 3: Clone/Pull OpenWrt
 # ============================================================
 
-chmod +x "$GITHUB_WORKSPACE/scripts/build/prepare_source.sh"
 "$GITHUB_WORKSPACE/scripts/build/prepare_source.sh" \
   "$GITHUB_WORKSPACE" "$REPO_URL" "$REPO_BRANCH" "$REPO_COMMIT" "$BUILD_CACHE_DIR"
 
@@ -91,7 +89,6 @@ chmod +x "$GITHUB_WORKSPACE/scripts/build/prepare_source.sh"
 # ============================================================
 
 [ -e "$FEEDS_CONF" ] && cp "$FEEDS_CONF" openwrt/feeds.conf.default
-chmod +x "$DIY_P1_SH"
 
 pushd openwrt
 # Restore feeds files deleted by previous builds (Docker volume mount persistence)
@@ -113,7 +110,6 @@ if ! GITHUB_WORKSPACE="$GITHUB_WORKSPACE" BUILD_CACHE_DIR="$BUILD_CACHE_DIR" "$G
   echo "❌ diy-part1.sh failed"
   exit 1
 fi
-git config --global http.version HTTP/1.1
 feeds_updated=0
 for attempt in 1 2 3; do
   if ./scripts/feeds update -f -a; then
@@ -143,7 +139,6 @@ done
 [ -e "$GITHUB_WORKSPACE/$CONFIG_FILE" ] && cp "$GITHUB_WORKSPACE/$CONFIG_FILE" .config
 # This pass validates feed packages, including the SmartDNS fallback, before DIY
 # creates repository-owned package overrides.
-chmod +x "$GITHUB_WORKSPACE/scripts/build/resolve_config.sh"
 "$GITHUB_WORKSPACE/scripts/build/resolve_config.sh" \
   "$GITHUB_WORKSPACE/openwrt" "$GITHUB_WORKSPACE/$CONFIG_FILE" "before diy-part2.sh"
 
@@ -151,7 +146,6 @@ popd
 
 [ -e "$GITHUB_WORKSPACE/files" ] && cp -r "$GITHUB_WORKSPACE/files" openwrt/files
 [ -e "$GITHUB_WORKSPACE/$CONFIG_FILE" ] && cp "$GITHUB_WORKSPACE/$CONFIG_FILE" openwrt/.config
-chmod +x "$DIY_P2_SH"
 
 pushd openwrt
 if ! GITHUB_WORKSPACE="$GITHUB_WORKSPACE" "$GITHUB_WORKSPACE/$DIY_P2_SH"; then
@@ -374,6 +368,5 @@ else
   exit 1
 fi
 
-chmod +x "$GITHUB_WORKSPACE/scripts/verify_firmware.sh"
 "$GITHUB_WORKSPACE/scripts/verify_firmware.sh" openwrt "$RELEASE_DIR" "$RELEASE_NAME"
 ls -lh "$RELEASE_DIR/${RELEASE_NAME}.img.gz"

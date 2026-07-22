@@ -26,20 +26,19 @@ restore_build_caches() {
 	local directory
 	[ -n "$BUILD_CACHE_DIR" ] || return 0
 	for directory in dl staging_dir build_dir; do
-		[ -d "$BUILD_CACHE_DIR/$directory" ] && mv "$BUILD_CACHE_DIR/$directory" "/tmp/$directory-cache"
-	done
-	for directory in dl staging_dir build_dir; do
-		[ -d "/tmp/$directory-cache" ] && mv "/tmp/$directory-cache" "$SOURCE_DIR/$directory" && echo "✅ Restored $directory from build cache"
+		if [ -d "$BUILD_CACHE_DIR/$directory" ]; then
+			mv "$BUILD_CACHE_DIR/$directory" "$SOURCE_DIR/$directory"
+			echo "✅ Restored $directory from build cache"
+		fi
 	done
 }
 
 if [ ! -e "$SOURCE_DIR" ] || [ ! -d "$SOURCE_DIR/.git" ]; then
 	[ -d "$SOURCE_DIR" ] && save_build_caches
 	rm -rf "$SOURCE_DIR"
-	git config --global http.version HTTP/1.1
 	for _ in 1 2 3; do
 		rm -rf "$SOURCE_DIR"
-		git clone --depth 1 "$REPO_URL" -b "$REPO_BRANCH" "$SOURCE_DIR" && break
+		git -c http.version=HTTP/1.1 clone --depth 1 "$REPO_URL" -b "$REPO_BRANCH" "$SOURCE_DIR" && break
 		echo "⚠️ git clone failed, retrying..."
 		sleep 3
 	done
@@ -52,12 +51,12 @@ fi
 pushd "$SOURCE_DIR"
 rm -rf files package
 if [ -n "$REPO_COMMIT" ]; then
-	git fetch --depth 1 origin "$REPO_COMMIT" || {
+	git -c http.version=HTTP/1.1 fetch --depth 1 origin "$REPO_COMMIT" || {
 		echo "❌ unable to fetch requested OpenWrt commit: $REPO_COMMIT"
 		exit 1
 	}
 else
-	git fetch --depth 1 origin "$REPO_BRANCH" || {
+	git -c http.version=HTTP/1.1 fetch --depth 1 origin "$REPO_BRANCH" || {
 		echo "❌ unable to fetch OpenWrt branch: $REPO_BRANCH"
 		exit 1
 	}
