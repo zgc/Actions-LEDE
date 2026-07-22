@@ -84,20 +84,22 @@ remove_declared_build_paths() {
 [ -e "$FEEDS_CONF" ] && cp "$FEEDS_CONF" openwrt/feeds.conf.default
 
 pushd openwrt
-# 恢复上次构建删除的 feed 文件（Docker volume 持久化场景）。
+# Docker volume 可能遗留由其他 UID 创建的 feeds。feeds 是上游忽略、可重建的
+# 构建缓存；直接丢弃它，避免非 root 构建用户执行 chown 而必然失败。
+workspace_uid=$(stat -c '%u' .)
+workspace_gid=$(stat -c '%g' .)
+if [ -d feeds ] && find feeds -xdev \( ! -uid "$workspace_uid" -o ! -gid "$workspace_gid" \) -print -quit 2>/dev/null | grep -q .; then
+  echo "⚠️ Rebuilding feeds cache left by a different UID"
+  rm -rf feeds || { echo "❌ unable to remove stale feeds cache"; exit 1; }
+fi
+
+# 恢复同一 UID 的持久化 feed 工作树，减少不必要的重新拉取。
 for feed_dir in feeds/*/; do
   if [ -d "$feed_dir/.git" ]; then
     rm -f "$feed_dir/.git/index.lock"
     git -C "$feed_dir" checkout -- . 2>/dev/null
   fi
 done
-# 旧 Docker 构建可能留下 root 所有的 feed 文件；仅在属主不匹配时递归修正，
-# 避免每次构建都执行 chown。
-workspace_uid=$(stat -c '%u' .)
-workspace_gid=$(stat -c '%g' .)
-if find feeds -xdev \( ! -uid "$workspace_uid" -o ! -gid "$workspace_gid" \) -print -quit 2>/dev/null | grep -q .; then
-  chown -R "$workspace_uid:$workspace_gid" feeds/ || exit 1
-fi
 
 if ! GITHUB_WORKSPACE="$GITHUB_WORKSPACE" BUILD_CACHE_DIR="$BUILD_CACHE_DIR" "$GITHUB_WORKSPACE/$DIY_P1_SH"; then
   echo "❌ diy-part1.sh failed"
