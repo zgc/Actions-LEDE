@@ -12,7 +12,7 @@
 # - Download, toolchain, and compiler cache keys scoped to safe inputs
 # - Lean runner setup: install prerequisites without upgrading the OS
 # - 8GB swap file to prevent OOM during Go/Rust compilations
-# - Canonical build.sh handles serial package compilation and retry policy
+# - Canonical build.sh handles source preparation, package configuration, and retry policy
 #
 
 name: Build OpenWrt
@@ -151,7 +151,6 @@ jobs:
         # Fix GnuTLS TLS 1.3 handshake failures with GitHub
         git config --global http.sslVersion tlsv1.2
         git config --global http.version HTTP/1.1
-        git config --global http.postBuffer 524288000
         git config --global --add safe.directory '*'
         git clone --depth 1 "$REPO_URL" -b "$REPO_BRANCH" openwrt
         if [ -n "$REPO_COMMIT" ]; then

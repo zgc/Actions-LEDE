@@ -28,10 +28,6 @@ fi
 # Package customization runs in diy-part2.sh; retain the device version pin.
 export ZEROTIER_VERSION
 
-# Fix: Docker image now has git compiled against OpenSSL (not GnuTLS)
-# TLS workarounds no longer needed — keep postBuffer as safety net
-git config --global http.postBuffer 524288000
-
 # ============================================================
 # Section 2: Variables
 # ============================================================
