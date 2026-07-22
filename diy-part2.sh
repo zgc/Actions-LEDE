@@ -93,9 +93,34 @@ configure_application_defaults() {
 	sed -i "s|option command '.*'|option command '/bin/login -f root'|" feeds/packages/utils/ttyd/files/ttyd.config
 }
 
+zerotier_source_supports_feed_patches() {
+	local zt_feed="$1" archive="$2" work_dir source_dir patch
+
+	work_dir=$(mktemp -d) || return 1
+	if ! tar -xzf "$archive" -C "$work_dir"; then
+		rm -rf "$work_dir"
+		return 1
+	fi
+	source_dir=$(find "$work_dir" -mindepth 1 -maxdepth 1 -type d -name 'ZeroTierOne-*' -print -quit)
+	if [ -z "$source_dir" ]; then
+		rm -rf "$work_dir"
+		return 1
+	fi
+	for patch in "$zt_feed"/patches/*.patch; do
+		[ -f "$patch" ] || continue
+		if ! patch --batch --dry-run -d "$source_dir" -p1 < "$patch" >/dev/null; then
+			echo "⚠️ zerotier: $(basename "$patch") is incompatible with the requested source"
+			rm -rf "$work_dir"
+			return 1
+		fi
+	done
+	rm -rf "$work_dir"
+	return 0
+}
+
 configure_zerotier() {
 	# Use latest by default while allowing a device to pin ZEROTIER_VERSION.
-	local zt_feed=feeds/packages/net/zerotier zt_current zt_target zt_hash zt_conf
+	local zt_feed=feeds/packages/net/zerotier zt_current zt_target zt_hash zt_conf zt_tmp zt_archive
 	[ -f "$zt_feed/Makefile" ] || return 0
 	zt_current="$(sed -n 's/^PKG_VERSION:=//p' "$zt_feed/Makefile" | head -1)"
 	zt_target="${ZEROTIER_VERSION:-latest}"
@@ -107,15 +132,23 @@ configure_zerotier() {
 		*) echo "WARNING: zerotier release lookup failed; keeping $zt_current"; zt_target="$zt_current" ;;
 	esac
 	if [ "$zt_current" != "$zt_target" ]; then
-		zt_hash="$(curl --fail --retry 3 --retry-delay 2 --silent --show-error -L "https://codeload.github.com/zerotier/ZeroTierOne/tar.gz/$zt_target" | sha256sum | awk '{print $1}')" || zt_hash=""
+		zt_tmp=$(mktemp -d) || return 1
+		zt_archive="$zt_tmp/zerotier-$zt_target.tar.gz"
+		if curl --fail --retry 3 --retry-delay 2 --silent --show-error -L \
+			"https://codeload.github.com/zerotier/ZeroTierOne/tar.gz/$zt_target" -o "$zt_archive"; then
+			zt_hash=$(sha256sum "$zt_archive" | awk '{print $1}')
+		else
+			zt_hash=""
+		fi
 		case "$zt_hash" in ''|*[!0-9a-f]*) zt_hash="" ;; esac
-		if [ "${#zt_hash}" -eq 64 ]; then
+		if [ "${#zt_hash}" -eq 64 ] && zerotier_source_supports_feed_patches "$zt_feed" "$zt_archive"; then
 			sed -i "s/^PKG_VERSION:=$zt_current/PKG_VERSION:=$zt_target/" "$zt_feed/Makefile"
 			sed -i "s/^PKG_HASH:=.*/PKG_HASH:=$zt_hash/" "$zt_feed/Makefile"
 			echo "✅ zerotier updated $zt_current → $zt_target (hash: ${zt_hash:0:12}...)"
 		else
-			echo "⚠️ zerotier source verification failed; keeping $zt_current unchanged"
+			echo "⚠️ zerotier source or feed patches are incompatible; keeping feed version $zt_current"
 		fi
+		rm -rf "$zt_tmp"
 	fi
 	zt_conf="$zt_feed/files/etc/config/zerotier"
 	if [ -f "$zt_conf" ]; then
