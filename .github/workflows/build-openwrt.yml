@@ -8,12 +8,11 @@
 # Description: Build OpenWrt using GitHub Actions (Optimized)
 #
 # Optimization features:
-# - actions/cache@v4 with granular DL/TOOLCHAIN/CCACHE keys
-# - Step-level timeout-minutes for all long-running steps
-# - 8GB swap file to prevent OOM on Go/Rust compilations
-# - Parallel Go pre-compile (background + wait)
-# - Load-aware make (make -l) to prevent CPU oversubscription
-# - Retry with V=s on failure for easier debug
+# - Deterministic upstream commit passed to the canonical build pipeline
+# - Download, toolchain, and compiler cache keys scoped to safe inputs
+# - Lean runner setup: install prerequisites without upgrading the OS
+# - 8GB swap file to prevent OOM during Go/Rust compilations
+# - Canonical build.sh handles serial package compilation and retry policy
 #
 
 name: Build OpenWrt
@@ -129,17 +128,9 @@ jobs:
         DEBIAN_FRONTEND: noninteractive
       timeout-minutes: 15
       run: |
-        sudo -E docker image prune --all --force
-        sudo -E docker builder prune -a
-        sudo -E rm -rf /usr/share/dotnet /etc/mysql /etc/php /etc/apt/sources.list.d /usr/local/lib/android /opt/ghc /usr/local/graalvm /usr/local/.ghcup /usr/local/share/powershell /usr/local/share/chromium /usr/local/lib/node_modules
-        sudo -E apt-mark hold grub-efi-amd64-signed
-        sudo -E apt update
-        sudo -E apt -y purge azure-cli* docker* ghc* zulu* llvm* firefox google* dotnet* powershell* openjdk* mysql* php* mongodb* dotnet* snap*
-        sudo -E apt -y full-upgrade
-        sudo -E apt -y install ack asciidoc autoconf automake autopoint binutils bison build-essential bzip2 ccache ca-certificates clang cmake cpio curl device-tree-compiler fakeroot flex gawk gcc-multilib g++-multilib gettext genisoimage git gperf gnutls-dev haveged help2man intltool jq libc6-dev-i386 libelf-dev libglib2.0-dev libgmp3-dev libltdl-dev libmpc-dev libmpfr-dev libncurses-dev libpython3-dev libreadline-dev libssl-dev libtool libyaml-dev llvm lrzsz msmtp ninja-build nodejs npm patch pkgconf python3 python3-cryptography python3-docutils python3-pip python3-ply python3-pyelftools python3-requests qemu-utils quilt re2c rsync scons sharutils squashfs-tools subversion swig texinfo uglifyjs unzip vim wget xmlto xxd zlib1g-dev zstd
-        sudo -E systemctl daemon-reload
-        sudo -E apt -y autoremove --purge
-        sudo -E apt clean
+        sudo -E apt-get update -qq
+        sudo -E apt-get install -y --no-install-recommends ack asciidoc autoconf automake autopoint binutils bison build-essential bzip2 ccache ca-certificates clang cmake cpio curl device-tree-compiler fakeroot flex gawk gcc-multilib g++-multilib gettext genisoimage git gperf gnutls-dev help2man intltool jq libc6-dev-i386 libelf-dev libglib2.0-dev libgmp3-dev libltdl-dev libmpc-dev libmpfr-dev libncurses-dev libpython3-dev libreadline-dev libssl-dev libtool libyaml-dev lrzsz msmtp ninja-build nodejs npm patch pkgconf python3 python3-cryptography python3-docutils python3-pip python3-ply python3-pyelftools python3-requests qemu-utils quilt re2c rsync scons sharutils squashfs-tools subversion swig texinfo uglifyjs unzip vim wget xmlto xxd zlib1g-dev zstd
+        sudo -E apt-get clean
         sudo -E timedatectl set-timezone "$TZ"
         sudo mkdir -p /workdir
         sudo chown $USER:$GROUPS /workdir
@@ -162,34 +153,30 @@ jobs:
         git config --global http.version HTTP/1.1
         git config --global http.postBuffer 524288000
         git config --global --add safe.directory '*'
-        git clone --depth 1 $REPO_URL -b $REPO_BRANCH openwrt
-        [ ! -z $REPO_COMMIT ] && cd openwrt && git pull origin $REPO_COMMIT && git reset --hard $REPO_COMMIT
+        git clone --depth 1 "$REPO_URL" -b "$REPO_BRANCH" openwrt
+        if [ -n "$REPO_COMMIT" ]; then
+          git -C openwrt fetch --depth 1 origin "$REPO_COMMIT"
+          git -C openwrt reset --hard FETCH_HEAD
+        fi
         ln -sf /workdir/openwrt $GITHUB_WORKSPACE/openwrt
+        OPENWRT_COMMIT=$(git -C openwrt rev-parse HEAD)
+        echo "commit=$OPENWRT_COMMIT" >> $GITHUB_OUTPUT
+        echo "REPO_COMMIT=$OPENWRT_COMMIT" >> $GITHUB_ENV
+      id: source_ref
 
     # ── Granular cache strategy ──────────────────────────────────
-    # Key hierarchy:
-    #   1. dl-${DATE}          → source packages (daily refresh)
-    #   2. staging-${DEVICE}-${DATE} → toolchain + staging dirs
-    #   3. ccache-${DATE}      → compiler cache
-    # Restore fallback: latest matching prefix
-    #
-    # We compute CACHE_DATE once so all cache steps share the same epoch.
-    - name: Compute cache epoch
-      id: cache_date
-      run: echo "epoch=$(date +%Y%m%d)" >> $GITHUB_OUTPUT
-
-    # Cache 1: Source packages (dl/)
-    # Unchanged sources → full hit. Only new/changed pkgs → partial.
+    # Cache source downloads broadly: OpenWrt verifies their checksums before use.
     - name: Cache dl/
       id: cache_dl
       uses: actions/cache@v4
       with:
         path: openwrt/dl
-        key: openwrt-dl-${{ env.DEVICE_ARCH }}-${{ steps.cache_date.outputs.epoch }}
+        key: openwrt-dl-${{ env.DEVICE_ARCH }}-${{ hashFiles('feeds.conf.default', 'diy-part1.sh') }}
         restore-keys: |
           openwrt-dl-${{ env.DEVICE_ARCH }}-
 
-    # Cache 2: Toolchain + staging_dir (expensive to rebuild)
+    # Toolchain/staging outputs are only reusable for an identical upstream and
+    # build input set; restoring them across commits risks stale ABI artifacts.
     - name: Cache toolchain
       id: cache_toolchain
       uses: actions/cache@v4
@@ -199,9 +186,7 @@ jobs:
           openwrt/build_dir/target-*
           openwrt/build_dir/host
           openwrt/build_dir/hostpkg
-        key: openwrt-toolchain-${{ env.DEVICE_ARCH }}-${{ steps.cache_date.outputs.epoch }}
-        restore-keys: |
-          openwrt-toolchain-${{ env.DEVICE_ARCH }}-
+        key: openwrt-toolchain-${{ env.DEVICE_ARCH }}-${{ steps.source_ref.outputs.commit }}-${{ hashFiles('config.seed', 'feeds.conf.default', 'diy-part1.sh', 'diy-part2.sh', 'build.sh', 'scripts/build/**', 'scripts/verify_firmware.sh', 'openwrt-device.conf') }}
 
     # Cache 3: ccache (compiler cache)
     - name: Cache ccache
@@ -209,7 +194,7 @@ jobs:
       uses: actions/cache@v4
       with:
         path: ~/.ccache
-        key: openwrt-ccache-${{ env.DEVICE_ARCH }}-${{ steps.cache_date.outputs.epoch }}
+        key: openwrt-ccache-${{ env.DEVICE_ARCH }}-${{ hashFiles('config.seed', 'feeds.conf.default', 'diy-part1.sh', 'diy-part2.sh', 'build.sh', 'scripts/build/**', 'openwrt-device.conf') }}
         restore-keys: |
           openwrt-ccache-${{ env.DEVICE_ARCH }}-
 
