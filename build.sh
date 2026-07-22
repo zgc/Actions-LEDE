@@ -64,23 +64,6 @@ if ! python3 -c "import setuptools" 2>/dev/null; then
   echo "✅ python3-setuptools installed"
 fi
 
-# ============================================================
-# Section 2.2: Build Cache Functions
-# ============================================================
-
-save_build_caches() {
-  [ -z "$BUILD_CACHE_DIR" ] && return 0
-  local src="${1:-openwrt}"
-  for dir in dl staging_dir build_dir; do
-    if [ -d "$src/$dir" ] && [ ! -L "$src/$dir" ]; then
-      mkdir -p "$BUILD_CACHE_DIR"
-      rm -rf "$BUILD_CACHE_DIR/$dir"
-      mv "$src/$dir" "$BUILD_CACHE_DIR/$dir"
-      echo "✅ Saved $dir to build cache"
-    fi
-  done
-}
-
 remove_declared_build_paths() {
   local paths="$1" path
 
@@ -95,64 +78,13 @@ remove_declared_build_paths() {
   done
 }
 
-restore_build_caches() {
-  [ -z "$BUILD_CACHE_DIR" ] && return 0
-  local tgt="${1:-openwrt}"
-  # 2-step: cache → /tmp → target (target dir doesn't exist at restore time)
-  for dir in dl staging_dir build_dir; do
-    [ -d "$BUILD_CACHE_DIR/$dir" ] && mv "$BUILD_CACHE_DIR/$dir" "/tmp/$dir-cache"
-  done
-  for dir in dl staging_dir build_dir; do
-    [ -d "/tmp/$dir-cache" ] && mv "/tmp/$dir-cache" "$tgt/$dir" && echo "✅ Restored $dir from build cache"
-  done
-}
-
 # ============================================================
 # Section 3: Clone/Pull OpenWrt
 # ============================================================
 
-if [ ! -e openwrt ] || [ ! -d openwrt/.git ]; then
-  # No valid git clone — need fresh clone
-  # Build cache: saves cross-compiler toolchain (~10 min), dl (~5 min), build_dir (~5 min)
-  # Save existing caches before wiping (Docker volume persistence)
-  [ -d openwrt ] && save_build_caches
-
-  rm -rf openwrt
-  # GnuTLS intermittent TLS error workaround: HTTP/1.1 + retry loop
-  git config --global http.version HTTP/1.1
-  for _ in 1 2 3; do
-    rm -rf openwrt
-    git clone --depth 1 $REPO_URL -b $REPO_BRANCH openwrt && break
-    echo "⚠️ git clone failed, retrying..."
-    sleep 3
-  done
-  if [ ! -f openwrt/Makefile ]; then
-    echo "❌ git clone failed after 3 attempts"
-    exit 1
-  fi
-
-  restore_build_caches
-fi
-
-# Normalize a fresh clone and an existing worktree through the same immutable
-# source selection path. `git pull <commit>` can merge unexpectedly and a
-# fresh clone previously ignored REPO_COMMIT altogether.
-pushd openwrt
-rm -rf files package
-if [ -n "$REPO_COMMIT" ]; then
-  git fetch --depth 1 origin "$REPO_COMMIT" || {
-    echo "❌ unable to fetch requested OpenWrt commit: $REPO_COMMIT"
-    exit 1
-  }
-  git reset --hard FETCH_HEAD
-else
-  git fetch --depth 1 origin "$REPO_BRANCH" || {
-    echo "❌ unable to fetch OpenWrt branch: $REPO_BRANCH"
-    exit 1
-  }
-  git reset --hard FETCH_HEAD
-fi
-popd
+chmod +x "$GITHUB_WORKSPACE/scripts/build/prepare_source.sh"
+"$GITHUB_WORKSPACE/scripts/build/prepare_source.sh" \
+  "$GITHUB_WORKSPACE" "$REPO_URL" "$REPO_BRANCH" "$REPO_COMMIT" "$BUILD_CACHE_DIR"
 
 # ============================================================
 # Section 4: Feeds Setup
@@ -203,39 +135,6 @@ done
 # Section 5: Config
 # ============================================================
 
-refresh_package_metadata() {
-  # Only regenerate Kconfig package metadata. Do not remove build outputs or downloads.
-  rm -f tmp/.packageinfo tmp/.packagedeps tmp/.packageauxvars tmp/.packageusergroup \
-    tmp/.config-*.in tmp/info/.files-packageinfo* tmp/info/.packageinfo-*
-  make prepare-tmpinfo || { echo "❌ package metadata refresh failed"; exit 1; }
-  test -s tmp/.packageinfo || { echo "❌ package metadata is empty"; exit 1; }
-}
-
-verify_config_packages() {
-  local package missing_packages=""
-  [ -f "$GITHUB_WORKSPACE/$CONFIG_FILE" ] || return 0
-  while IFS= read -r package; do
-    [ -z "$package" ] && continue
-    grep -Fqx "CONFIG_PACKAGE_${package}=y" .config || missing_packages="$missing_packages $package"
-  done < <(sed -n 's/^CONFIG_PACKAGE_\([A-Za-z0-9_-]*\)=y$/\1/p' "$GITHUB_WORKSPACE/$CONFIG_FILE")
-  if [ -n "$missing_packages" ]; then
-    echo "❌ Requested packages missing after defconfig:$missing_packages"
-    exit 1
-  fi
-  echo "✅ Requested package selections verified"
-}
-
-resolve_config() {
-  local phase="$1"
-
-  refresh_package_metadata
-  make defconfig || {
-    echo "❌ defconfig failed during $phase"
-    return 1
-  }
-  verify_config_packages
-}
-
 drop_filesystem_caches() {
   local phase="$1"
 
@@ -250,7 +149,9 @@ drop_filesystem_caches() {
 [ -e "$GITHUB_WORKSPACE/$CONFIG_FILE" ] && cp "$GITHUB_WORKSPACE/$CONFIG_FILE" .config
 # This pass validates feed packages, including the SmartDNS fallback, before DIY
 # creates repository-owned package overrides.
-resolve_config "before diy-part2.sh" || exit 1
+chmod +x "$GITHUB_WORKSPACE/scripts/build/resolve_config.sh"
+"$GITHUB_WORKSPACE/scripts/build/resolve_config.sh" \
+  "$GITHUB_WORKSPACE/openwrt" "$GITHUB_WORKSPACE/$CONFIG_FILE" "before diy-part2.sh"
 
 popd
 
@@ -265,7 +166,8 @@ if ! GITHUB_WORKSPACE="$GITHUB_WORKSPACE" "$GITHUB_WORKSPACE/$DIY_P2_SH"; then
 fi
 # DIY adds package definitions and the device overlay, so resolve again before
 # downloading or compiling. This is intentionally separate from the feed pass.
-resolve_config "after diy-part2.sh" || exit 1
+"$GITHUB_WORKSPACE/scripts/build/resolve_config.sh" \
+  "$GITHUB_WORKSPACE/openwrt" "$GITHUB_WORKSPACE/$CONFIG_FILE" "after diy-part2.sh"
 
 # ============================================================
 # Section 6: Package Fixes
