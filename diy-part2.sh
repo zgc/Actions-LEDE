@@ -7,11 +7,11 @@
 #
 # https://github.com/P3TERX/Actions-OpenWrt
 # File name: diy-part2.sh
-# Description: OpenWrt DIY script part 2 (After Update feeds)
+# 说明：OpenWrt DIY 脚本第二阶段（更新 feeds 后）
 #
 
 # =============================================================================
-# Build constants and download helpers
+# 构建常量和下载辅助函数
 # =============================================================================
 Arch="amd64"
 CPU_MODEL="${Arch}-v3"
@@ -43,7 +43,7 @@ install_mihomo_latest() {
 }
 
 # =============================================================================
-# Shared build customizations
+# 共享构建定制
 # =============================================================================
 configure_dropbear() {
 	sed -i \
@@ -73,7 +73,7 @@ configure_firstboot_defaults() {
 	sed -i '/^exit 0$/i /etc/init.d/rootfs-integrity-check start' "$defaults"
 	sed -i '/^exit 0$/i\if ! uci -q get network.globals.multipath >/dev/null; then uci -q set network.globals.multipath="1"; uci -q commit network; fi' "$defaults"
 
-	# Optional checks are advertised by Base; device cron overlays choose activation.
+	# Base 提供可选检查；是否启用由设备 cron overlay 决定。
 	for cron_script in check_smartdns_connect.sh check_openclash_connect.sh check_wan_connect.sh; do
 		sed -i '/exit 0/i\if ! grep -q "/etc/'"$cron_script"'" /etc/crontabs/root 2>/dev/null; then echo "#*/5 * * * * /etc/'"$cron_script"'" >> /etc/crontabs/root; fi' "$defaults"
 	done
@@ -121,7 +121,7 @@ zerotier_source_supports_feed_patches() {
 }
 
 configure_zerotier() {
-	# Use latest by default while allowing a device to pin ZEROTIER_VERSION.
+	# 默认使用最新版本，同时允许设备固定 ZEROTIER_VERSION。
 	local zt_feed=feeds/packages/net/zerotier zt_current zt_target zt_hash zt_conf zt_tmp zt_archive
 	[ -f "$zt_feed/Makefile" ] || return 0
 	zt_current="$(sed -n 's/^PKG_VERSION:=//p' "$zt_feed/Makefile" | head -1)"
@@ -162,8 +162,7 @@ configure_zerotier() {
 configure_custom_packages() {
 	local pkg_dir pkg_name link
 
-	# Feed installation creates package symlinks.  The repository-owned package
-	# implementation must take precedence when both provide the same name.
+	# feed 安装会创建软件包链接；同名时必须由仓库自有实现优先。
 	for pkg_dir in package/emortal/*/; do
 		[ -d "$pkg_dir" ] || continue
 		pkg_name="$(basename "$pkg_dir")"
@@ -173,8 +172,8 @@ configure_custom_packages() {
 		done
 	done
 
-	# The PikuZheng SmartDNS service replaces the upstream package, whose
-	# metadata also claims luci-app-smartdns.  Pair it with one current LuCI UI.
+	# PikuZheng SmartDNS 服务替换上游软件包；上游元数据也声明了
+	# luci-app-smartdns，因此只保留一份当前 LuCI UI。
 	if [ -d package/emortal/smartdns ]; then
 		if [ ! -d feeds/luci/applications/luci-app-smartdns ]; then
 			echo "❌ luci-app-smartdns source is missing from the LuCI feed"
@@ -234,7 +233,7 @@ configure_zerotier || exit 1
 configure_custom_packages || exit 1
 
 # =============================================================================
-# OpenClash default configuration
+# OpenClash 默认配置
 # =============================================================================
 
 echo '
@@ -951,7 +950,7 @@ config rule_providers
 ' >package/emortal/luci-app-openclash/root/etc/config/openclash
 
 # =============================================================================
-# OpenClash core and rule data
+# OpenClash 内核与规则数据
 # =============================================================================
 mkdir -p package/emortal/luci-app-openclash/root/etc/openclash/core
 if ${CLASH_META_REPOS_VERNESONG}; then
@@ -973,7 +972,7 @@ download_required "https://github.com/Loyalsoldier/v2ray-rules-dat/releases/late
 download_required "https://github.com/vernesong/mihomo/releases/download/LightGBM-Model/Model-large.bin" package/emortal/luci-app-openclash/root/etc/openclash/Model.bin "Mihomo model"
 
 # =============================================================================
-# SmartDNS default configuration
+# SmartDNS 默认配置
 # =============================================================================
 mkdir -p files/etc/config
 echo '
@@ -1164,7 +1163,7 @@ config ip-rule
 ' >files/etc/config/smartdns
 
 # =============================================================================
-# Build metadata and device configuration
+# 构建元数据与设备配置
 # =============================================================================
 FW_DATE=$(date +%Y%m%d)
 FW_HASH=$(git -c safe.directory="$GITHUB_WORKSPACE" -C "$GITHUB_WORKSPACE" rev-parse --short HEAD 2>/dev/null || echo "dev")
@@ -1185,5 +1184,5 @@ if [ -f "$GITHUB_WORKSPACE/openwrt-device.conf" ]; then
 	echo "✅ openwrt-device.conf → /etc/"
 fi
 
-# UPnP friendly_name remains device-owned in files/etc/config/upnpd.
+# UPnP friendly_name 由设备 files/etc/config/upnpd 维护。
 write_custom_build_provenance

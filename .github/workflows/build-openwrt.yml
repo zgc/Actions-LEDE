@@ -5,14 +5,14 @@
 # See /LICENSE for more information.
 #
 # https://github.com/P3TERX/Actions-OpenWrt
-# Description: Build OpenWrt using GitHub Actions (Optimized)
+# 说明：使用 GitHub Actions 构建 OpenWrt（已优化）
 #
-# Optimization features:
-# - Deterministic upstream commit passed to the canonical build pipeline
-# - Download, toolchain, and compiler cache keys scoped to safe inputs
-# - Lean runner setup: install prerequisites without upgrading the OS
-# - 8GB swap file to prevent OOM during Go/Rust compilations
-# - Canonical build.sh handles source preparation, package configuration, and retry policy
+# 优化要点：
+# - 将确定的上游提交传入统一构建流程。
+# - 下载、工具链和编译器缓存键仅基于安全输入。
+# - 精简 runner 初始化：只安装前置依赖，不升级系统。
+# - 创建 8GB swap，避免 Go/Rust 编译时内存耗尽。
+# - 由统一的 build.sh 处理源码准备、软件包配置和重试策略。
 #
 
 name: Build OpenWrt
@@ -105,7 +105,7 @@ jobs:
         else
           echo "No openwrt-device.conf found, using default RELEASE_NAME"
         fi
-        # Extract DEVICE_ARCH from config.seed for build cache key
+        # 从 config.seed 提取 DEVICE_ARCH，作为构建缓存键的一部分。
         if [ -f config.seed ]; then
           DEVICE_ARCH=$(grep '^CONFIG_TARGET_[a-z0-9_]*=y$' config.seed 2>/dev/null | tail -1 | sed 's/^CONFIG_TARGET_//;s/=y$//')
           echo "DEVICE_ARCH=${DEVICE_ARCH:-x86_64}" >> $GITHUB_ENV
@@ -123,7 +123,7 @@ jobs:
         sudo -E timedatectl set-timezone "$TZ"
         sudo mkdir -p /workdir
         sudo chown "$USER:$(id -gn)" /workdir
-        # ccache config
+        # ccache 配置
         mkdir -p ~/.ccache
         echo "max_size = 2.0G" >> ~/.ccache/ccache.conf
         echo "compression = true" >> ~/.ccache/ccache.conf
@@ -137,7 +137,7 @@ jobs:
         df -hT $PWD
         echo -e "GITHUB_WORKSPACE -> $GITHUB_WORKSPACE"
         df -hT $GITHUB_WORKSPACE
-        # Keep transport compatibility local to these source operations.
+        # 传输兼容性配置仅作用于这些源码操作。
         git -c http.sslVersion=tlsv1.2 -c http.version=HTTP/1.1 \
           clone --depth 1 "$REPO_URL" -b "$REPO_BRANCH" openwrt
         if [ -n "$REPO_COMMIT" ]; then
@@ -151,8 +151,8 @@ jobs:
         echo "REPO_COMMIT=$OPENWRT_COMMIT" >> $GITHUB_ENV
       id: source_ref
 
-    # ── Granular cache strategy ──────────────────────────────────
-    # Cache source downloads broadly: OpenWrt verifies their checksums before use.
+    # ── 分层缓存策略 ──────────────────────────────────────────────
+    # 广泛缓存源码下载；OpenWrt 使用前会验证校验和。
     - name: Cache dl/
       id: cache_dl
       uses: actions/cache@v4
@@ -162,8 +162,8 @@ jobs:
         restore-keys: |
           openwrt-dl-${{ env.DEVICE_ARCH }}-
 
-    # Toolchain/staging outputs are only reusable for an identical upstream and
-    # build input set; restoring them across commits risks stale ABI artifacts.
+    # 工具链和 staging 产物仅能在上游与构建输入完全一致时复用；跨提交恢复会引入
+    # 过期 ABI 产物。
     - name: Cache toolchain
       id: cache_toolchain
       uses: actions/cache@v4
@@ -175,7 +175,7 @@ jobs:
           openwrt/build_dir/hostpkg
         key: openwrt-toolchain-${{ env.DEVICE_ARCH }}-${{ steps.source_ref.outputs.commit }}-${{ hashFiles('config.seed', 'feeds.conf.default', 'diy-part1.sh', 'diy-part2.sh', 'build.sh', 'scripts/build/**', 'scripts/verify_firmware.sh', 'openwrt-device.conf') }}
 
-    # Cache 3: ccache (compiler cache)
+    # 缓存 3：ccache（编译器缓存）
     - name: Cache ccache
       id: cache_ccache
       uses: actions/cache@v4

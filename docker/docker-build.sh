@@ -1,9 +1,9 @@
 #!/bin/bash
 #
-# Docker build helper for Actions-LEDE
-# Thin wrapper around docker compose — single source of truth for build config
+# Actions-LEDE 的 Docker 构建辅助脚本
+# 对 docker compose 的轻量封装，构建配置仅以 compose 为准
 #
-# Usage: ./docker-build.sh {build|run|compile}
+# 用法：./docker-build.sh {build|run|compile}
 #
 
 set -eu
@@ -12,7 +12,7 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 IMAGE_NAME="actions-lede-builder"
 
-# Show target device info if available
+# 可用时显示目标设备信息
 if [ -f "$PROJECT_ROOT/openwrt-device.conf" ]; then
     DEVICE=$(grep '^RELEASE_NAME=' "$PROJECT_ROOT/openwrt-device.conf" 2>/dev/null | cut -d= -f2)
     [ -n "$DEVICE" ] && echo "🎯 目标设备: $DEVICE"

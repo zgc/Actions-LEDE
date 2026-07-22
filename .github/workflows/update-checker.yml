@@ -6,7 +6,7 @@
 #
 # https://github.com/P3TERX/Actions-OpenWrt
 # File: .github/workflows/update-checker.yml
-# Description: Source code update checker
+# 说明：源码更新检查器
 #
 
 name: Update Checker

@@ -1,5 +1,5 @@
 #!/bin/bash
-# Resolve and verify a device config after a source or DIY package change.
+# 源码或 DIY 软件包变更后，解析并验证设备配置。
 set -euo pipefail
 
 OPENWRT_DIR=${1:?usage: resolve_config.sh <openwrt-dir> <config-file> <phase>}

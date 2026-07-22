@@ -7,17 +7,17 @@
 #
 # https://github.com/P3TERX/Actions-OpenWrt
 # File name: diy-part1.sh
-# Description: OpenWrt DIY script part 1 (Before Update feeds)
+# 说明：OpenWrt DIY 脚本第一阶段（更新 feeds 前）
 #
 
 # =============================================================================
-# Build inputs
+# 构建输入
 # =============================================================================
 OPENCLASH_BRANCH=dev
 
 # =============================================================================
-# Source acquisition helper
-# cache_clone - GitHub clone with an explicitly opt-in local cache fallback.
+# 源码获取辅助函数
+# cache_clone：从 GitHub 克隆；仅在明确启用时回退至本地缓存。
 #
 # 优先 git clone，失败时 fallback 到本地缓存。
 # BUILD_CACHE_DIR 有值时启用缓存（device fork openwrt-device.conf）。
@@ -85,7 +85,7 @@ cache_clone() {
 }
 
 # =============================================================================
-# Third-party package sources
+# 第三方软件包源码
 # =============================================================================
 # 1. luci-theme-argon（luci-app-argon-config 依赖的主题）
 cache_clone "luci-theme-argon" \
@@ -104,12 +104,11 @@ cache_clone "luci-app-openclash" \
   "luci-app-openclash"
 
 # =============================================================================
-# Optional SmartDNS enhancement with feed fallback
+# 可选 SmartDNS 增强功能及 feed 回退
 # =============================================================================
 # 4. PikuZheng/smartdns（增强 fork，额外 bugfix + Web UI）
-#    Release tag, source and UI asset must describe the same release. Do not
-#    fall back to master or a pinned UI asset when release discovery fails.
-#    The ImmortalWrt feed remains the compatible fallback.
+#    发布标签、源码和 UI 资源必须对应同一版本。发现版本失败时不能回退到
+#    master 或固定 UI 资源；ImmortalWrt feed 是兼容回退路径。
 install_pikuzheng_smartdns() (
 SM_TAG=""
 SM_VERSION=""
@@ -146,7 +145,7 @@ fi
 IFS=$'\t' read -r SM_TAG SM_VERSION SM_UI_FILE SM_UI_URL <<< "$_release"
 echo "✅ smartdns: latest compatible release $SM_VERSION (tag: $SM_TAG)"
 
-# 4a. Download the verified pre-built smartdns UI asset (.so + wwwroot).
+# 4a. 下载已验证的预编译 SmartDNS UI 资源（.so 与 wwwroot）。
 _sm_root="$(pwd)"
 _sm_ui_tmp=$(mktemp -d "${TMPDIR:-/tmp}/smartdns-ui.XXXXXX") || {
   echo "❌ smartdns-ui temporary directory creation failed"
@@ -175,18 +174,18 @@ fi
 rm -f "$SM_UI_FILE" control.tar.gz debian-binary
 cd "$_sm_root"
 
-# smartdns-ui is selected by config.seed. Do not produce a package that merely
-# exists in the manifest while its shared object or web assets are absent.
+# config.seed 选择了 smartdns-ui。不能只生成 manifest 中存在、但缺少共享对象或
+# Web 资源的软件包。
 if [ ! -f "$_sm_ui_tmp/usr/lib/smartdns_ui.so" ] || \
    [ ! -d "$_sm_ui_tmp/usr/share/smartdns/wwwroot" ]; then
   echo "❌ smartdns-ui assets are incomplete; refusing to build an empty UI package"
   return 1
 fi
 
-# Sanitize version: apk mkpkg rejects 'v' prefix in version components (e.g. .v48)
+# 清理版本号：apk mkpkg 不接受版本组成部分的 `v` 前缀（例如 `.v48`）。
 SM_VERSION="$(echo "$SM_VERSION" | sed 's/\.v\([0-9]\)/.\1/g')"
 
-# 4b. Clone PikuZheng/smartdns source (with retry)
+# 4b. 克隆 PikuZheng/smartdns 源码（带重试）。
 sm_ok=false
 for attempt in 1 2 3 4 5; do
   rm -rf package/emortal/smartdns
@@ -213,7 +212,7 @@ if [ "$sm_ok" != true ]; then
   return 1
 fi
 
-# Generate smartdns + smartdns-ui OpenWrt package Makefile
+# 生成 smartdns 与 smartdns-ui 的 OpenWrt 软件包 Makefile
 cat > package/emortal/smartdns/Makefile << 'PKG_MK_EOF'
 PKG_NAME:=smartdns
 PKG_VERSION:=__PKG_VERSION__
@@ -228,7 +227,7 @@ include $(INCLUDE_DIR)/package.mk
 MAKE_VARS += VER=$(PKG_VERSION)
 MAKE_PATH:=src
 
-# === smartdns server ===
+# === smartdns 服务端 ===
 define Package/smartdns/default
   SECTION:=net
   CATEGORY:=Network
@@ -266,7 +265,7 @@ define Package/smartdns/install
 	$(INSTALL_CONF) $(PKG_BUILD_DIR)/package/openwrt/files/etc/config/smartdns $(1)/etc/config/smartdns
 endef
 
-# === smartdns-ui (pre-built Web UI .so) ===
+# === smartdns-ui（预编译 Web UI .so）===
 define Package/smartdns-ui
   $(Package/smartdns/default)
   TITLE:=smartdns dashboard (pre-built)
@@ -325,7 +324,7 @@ if ! install_pikuzheng_smartdns; then
 fi
 
 # =============================================================================
-# OpenClash runtime compatibility
+# OpenClash 运行时兼容性
 # =============================================================================
 # 5. OpenClash Ruby 4.0 + Psych YAML 兼容性修复
 #    ImmortalWrt Ruby 4.0 的 Psych YAML 库需要显式 require stringio

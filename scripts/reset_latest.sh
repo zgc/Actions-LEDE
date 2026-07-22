@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Device configuration may include build-host variables that are unset on the router.
+# 设备配置可能含有路由器上未设置的构建主机变量。
 set +u
 [ -f /etc/openwrt-device.conf ] && . /etc/openwrt-device.conf
 set -euo pipefail
@@ -36,8 +36,7 @@ verify_written_image() {
 	disk_md5=$(
 		{
 			[ "$full_blocks" -eq 0 ] || dd if="/dev/$DISK" bs=1M count="$full_blocks" status=none
-			# BusyBox dd rejects byte offsets above 2 GiB. Use sector-sized
-			# addressing for the residual image tail instead.
+			# BusyBox dd 不接受大于 2 GiB 的字节偏移；剩余镜像尾部改用扇区寻址。
 			[ "$tail_blocks" -eq 0 ] || dd if="/dev/$DISK" bs=512 skip="$((full_blocks * 2048))" count="$tail_blocks" status=none
 		} | md5sum | awk '{print $1}'
 	)

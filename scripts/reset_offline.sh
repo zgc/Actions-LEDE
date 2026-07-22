@@ -1,8 +1,8 @@
 #!/bin/bash
 set -euo pipefail
 
-# The device config also contains build-host-only variables that may reference
-# unset environment variables. Load it before enabling nounset behavior.
+# 设备配置还包含仅构建主机使用、可能引用未设置环境变量的字段。
+# 因此必须在启用 nounset 前加载。
 set +u
 [ -f /etc/openwrt-device.conf ] && . /etc/openwrt-device.conf
 set -u
@@ -37,8 +37,7 @@ verify_written_image() {
 	disk_md5=$(
 		{
 			[ "$full_blocks" -eq 0 ] || dd if="/dev/$DISK" bs=1M count="$full_blocks" status=none
-			# BusyBox dd rejects byte offsets above 2 GiB. Use sector-sized
-			# addressing for the residual image tail instead.
+			# BusyBox dd 不接受大于 2 GiB 的字节偏移；剩余镜像尾部改用扇区寻址。
 			[ "$tail_blocks" -eq 0 ] || dd if="/dev/$DISK" bs=512 skip="$((full_blocks * 2048))" count="$tail_blocks" status=none
 		} | md5sum | awk '{print $1}'
 	)
@@ -72,8 +71,7 @@ echo -e "\e[92m写入 $IMG 到 /dev/$DISK\e[0m"
 dd if="$IMG" of="/dev/$DISK" conv=fsync status=progress || fail "写盘失败"
 sync
 
-# A successful write syscall does not prove that the target media contains the
-# image. Compare exactly the image length before rebooting.
+# 写入系统调用成功不代表目标介质已包含完整镜像；重启前必须按镜像长度精确比较。
 verify_written_image || fail "写盘后读回校验失败"
 
 trap - EXIT
