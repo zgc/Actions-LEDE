@@ -214,6 +214,7 @@ jobs:
           openwrt-ccache-${{ env.DEVICE_ARCH }}-
 
     - name: Load custom feeds
+      if: ${{ false }} # Superseded by build.sh; retained temporarily for audit history.
       timeout-minutes: 5
       run: |
         [ -e $FEEDS_CONF ] && mv $FEEDS_CONF openwrt/feeds.conf.default
@@ -222,14 +223,17 @@ jobs:
         $GITHUB_WORKSPACE/$DIY_P1_SH
 
     - name: Update feeds
+      if: ${{ false }} # Superseded by build.sh.
       timeout-minutes: 10
       run: cd openwrt && ./scripts/feeds update -a
 
     - name: Install feeds
+      if: ${{ false }} # Superseded by build.sh.
       timeout-minutes: 5
       run: cd openwrt && ./scripts/feeds install -a
 
     - name: Pair SmartDNS service and LuCI UI
+      if: ${{ false }} # Superseded by diy-part2.sh, called by build.sh.
       timeout-minutes: 2
       run: |
         cd openwrt
@@ -244,6 +248,7 @@ jobs:
         fi
 
     - name: Apply build fixes
+      if: ${{ false }} # Superseded by diy-part2.sh, called by build.sh.
       timeout-minutes: 2
       run: |
         cd openwrt
@@ -315,6 +320,7 @@ jobs:
         fi
 
     - name: Load custom configuration
+      if: ${{ false }} # Superseded by diy-part2.sh, called by build.sh.
       timeout-minutes: 2
       run: |
         [ -e files ] && mv files openwrt/files
@@ -334,6 +340,7 @@ jobs:
     # In download phase, also pre-fetch Go module deps for heavy Go packages
     # so the compile phase doesn't need to download them.
     - name: Download package
+      if: ${{ false }} # Superseded by build.sh; avoids downloading a default config.
       id: package
       timeout-minutes: 30
       run: |
@@ -351,43 +358,16 @@ jobs:
     #   2. Fire them in background (&) to overlap with main build
     #   3. Wait for background compiles to finish
     #   4. Retry failures with V=s for debug
-    - name: Compile the firmware
+    - name: Build firmware with canonical pipeline
       id: compile
-      timeout-minutes: 240      # ← 4h hard limit for compile alone
+      timeout-minutes: 300
       run: |
-        cd openwrt
-
-        echo "=== Pre-compiling enabled Go packages (background) ==="
-        # Check config to find which Go packages are actually selected
-        # Only pre-compile those; unselected packages skip silently.
-        for go_pkg in frp adguardhome filebrowser; do
-          # frp uses 'frpc' package name; map Go binary name to make target
-          case "$go_pkg" in
-            frp)        pkg_target="frpc" ;;
-            *)          pkg_target="$go_pkg" ;;
-          esac
-          if grep -q "CONFIG_PACKAGE_luci-app-${pkg_target}=y\|CONFIG_PACKAGE_${pkg_target}=y" .config 2>/dev/null; then
-            ( set -o pipefail; echo "=== Pre-compiling $go_pkg (target: $pkg_target) ===" && \
-              make package/$pkg_target/compile -j1 V=s 2>&1 | tail -5 && \
-              echo "✅ $go_pkg done" ) &
-          fi
-        done
-
-        echo -e "$(nproc) thread compile (load-limited)"
-        # Main build: -jN for parallelism, -lN to avoid oversubscription
-        # Retry: first pass with -j$(nproc), fallback to -j1 V=s for error visibility
-        set -o pipefail
-        if ! make -j$(nproc) -l$(nproc) 2>&1 | tail -20; then
-          echo "::warning::parallel build failed; retrying serially"
-          make -j1 V=s 2>&1 | tail -40 || exit 1
-        fi
-
-        # Wait for background Go compiles
-        wait
+        chmod +x ./build.sh
+        ./build.sh
         echo "status=success" >> $GITHUB_OUTPUT
 
-        [ -z $RELEASE_NAME ] && RELEASE_NAME=$(grep '^CONFIG_TARGET.*DEVICE.*=y' .config | sed -r 's/CONFIG_TARGET_(.*)_DEVICE.*=y/\1/')
-        echo $RELEASE_NAME > DEVICE_NAME
+        [ -z "$RELEASE_NAME" ] && RELEASE_NAME=$(grep '^CONFIG_TARGET.*DEVICE.*=y' config.seed | sed -r 's/CONFIG_TARGET_(.*)_DEVICE.*=y/\1/')
+        echo "$RELEASE_NAME" > DEVICE_NAME
         [ -s DEVICE_NAME ] && echo "DEVICE_NAME=$(cat DEVICE_NAME)" >> $GITHUB_ENV
         echo "FILE_DATE=$(date +"%Y%m%d%H%M")" >> $GITHUB_ENV
 
