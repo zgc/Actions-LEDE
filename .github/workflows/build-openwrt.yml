@@ -222,6 +222,14 @@ jobs:
       if: (!cancelled())
       run: df -hT
 
+    - name: Upload build failure log
+      uses: actions/upload-artifact@v4
+      if: failure() && hashFiles('build-failure.log') != ''
+      with:
+        name: OpenWrt_build_failure_${{ env.RELEASE_NAME }}
+        path: build-failure.log
+        if-no-files-found: error
+
     - name: Upload bin directory
       uses: actions/upload-artifact@v4
       if: steps.compile.outputs.status == 'success' && env.UPLOAD_BIN_DIR == 'true'

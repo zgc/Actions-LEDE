@@ -135,17 +135,6 @@ done
 # Section 5: Config
 # ============================================================
 
-drop_filesystem_caches() {
-  local phase="$1"
-
-  sync
-  if { echo 3 > /proc/sys/vm/drop_caches; } 2>/dev/null; then
-    echo "✅ dropped filesystem caches $phase"
-  else
-    echo "ℹ️ cache drop skipped $phase (not permitted by container runtime)"
-  fi
-}
-
 [ -e "$GITHUB_WORKSPACE/$CONFIG_FILE" ] && cp "$GITHUB_WORKSPACE/$CONFIG_FILE" .config
 # This pass validates feed packages, including the SmartDNS fallback, before DIY
 # creates repository-owned package overrides.
@@ -182,9 +171,6 @@ export GOSUMDB=off
 # ============================================================
 # Section 8: Download
 # ============================================================
-
-# Docker commonly mounts this sysctl read-only; that is expected and non-fatal.
-drop_filesystem_caches "before download"
 
 make download -j8 || make download -j1 V=s || { echo "❌ make download failed"; exit 1; }
 find dl -not -path "dl/go-mod-cache/*" -size -1024c -type f -exec rm -f {} \;
@@ -261,20 +247,31 @@ remove_declared_build_paths "${OVERLAY_CACHE_CLEAN_PATHS:-}" || exit 1
 
 echo "=== Stale squashfs/target-dir cleaned ==="
 
-# The same best-effort operation is repeated at this phase because downloads and
-# serial package builds may have populated the page cache.
-drop_filesystem_caches "before main build"
-
 echo "=== Starting main build ==="
 
 BUILD_LOG=$(mktemp)
 trap 'rm -f "$BUILD_LOG"' EXIT
-set -o pipefail
-make -j$(nproc) V=s 2>&1 | tee "$BUILD_LOG"
-BUILD_RC=${PIPESTATUS[0]}
+preserve_build_log() {
+  cp "$BUILD_LOG" "$GITHUB_WORKSPACE/build-failure.log" && \
+    echo "❌ Full build log saved to $GITHUB_WORKSPACE/build-failure.log"
+}
+
+run_main_build() {
+  make -j$(nproc) V=s >> "$BUILD_LOG" 2>&1
+}
+
+printf '%s\n' '=== Main build (full log captured locally) ===' > "$BUILD_LOG"
+if run_main_build; then
+  BUILD_RC=0
+  tail -n 40 "$BUILD_LOG"
+else
+  BUILD_RC=$?
+  tail -n 200 "$BUILD_LOG" >&2
+fi
 if [ $BUILD_RC -ne 0 ]; then
   if grep -q 'Hash mismatch for file' "$BUILD_LOG"; then
     echo "❌ Source-cache checksum mismatch; skipping retry to preserve the failure evidence."
+    preserve_build_log
     exit $BUILD_RC
   fi
   echo "⚠️ First attempt failed, cleaning kernel build dir and retrying..."
@@ -287,18 +284,26 @@ if [ $BUILD_RC -ne 0 ]; then
     esac
   done
   remove_declared_build_paths "${RETRY_CLEAN_PATHS:-}" || exit 1
-  make -j$(nproc) V=s
-  BUILD_RC=$?
+  printf '%s\n' '=== Main build retry (full log appended locally) ===' >> "$BUILD_LOG"
+  if run_main_build; then
+    BUILD_RC=0
+    tail -n 40 "$BUILD_LOG"
+  else
+    BUILD_RC=$?
+    tail -n 200 "$BUILD_LOG" >&2
+  fi
 fi
-rm -f "$BUILD_LOG"
-trap - EXIT
 popd
 
 if [ $BUILD_RC -ne 0 ]; then
+  preserve_build_log
   echo "❌ Build failed with exit code $BUILD_RC"
   echo "❌ Firmware copy SKIPPED — no valid build output"
   exit $BUILD_RC
 fi
+
+rm -f "$BUILD_LOG"
+trap - EXIT
 
 # ============================================================
 # Section 11: Save Config & Copy Firmware
