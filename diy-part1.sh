@@ -116,14 +116,23 @@ SM_UI_FILE=""
 SM_UI_URL=""
 
 echo "=== Checking latest PikuZheng/smartdns release ==="
-_release=$(curl --fail --silent --show-error --retry 5 --retry-delay 2 --location \
-  "https://api.github.com/repos/PikuZheng/smartdns/releases/latest" 2>/dev/null | \
-  python3 -c '
+_sm_release_tmp=$(mktemp "${TMPDIR:-/tmp}/smartdns-release.XXXXXX") || {
+  echo "❌ smartdns: failed to create release metadata temporary file"
+  return 1
+}
+_sm_http_status=$(curl --fail-with-body --silent --show-error --retry 5 --retry-delay 2 \
+  --connect-timeout 15 --max-time 90 --location \
+  --output "$_sm_release_tmp" --write-out '%{http_code}' \
+  "https://api.github.com/repos/PikuZheng/smartdns/releases/latest")
+_sm_curl_status=$?
+
+_release=$(python3 -c '
 import json
 import sys
 
 try:
-    release = json.load(sys.stdin)
+    with open(sys.argv[1], encoding="utf-8") as source:
+        release = json.load(source)
     tag = release.get("tag_name", "")
     if not release.get("draft") and not release.get("prerelease") and tag.endswith("_with_ui"):
         version = tag.removesuffix("_with_ui")
@@ -136,12 +145,31 @@ except (ValueError, TypeError):
     pass
 
 sys.exit(1)
-' 2>/dev/null)
+' "$_sm_release_tmp" 2>/dev/null)
 
 if [ -z "$_release" ]; then
-  echo "❌ smartdns: unable to discover a compatible source tag and x86_64 UI asset"
+  _sm_api_reason=$(python3 -c '
+import json
+import sys
+
+try:
+    with open(sys.argv[1], encoding="utf-8") as source:
+        response = json.load(source)
+    message = response.get("message", "") if isinstance(response, dict) else ""
+    if message:
+        print(" ".join(str(message).split())[:160])
+except (OSError, ValueError, TypeError):
+    pass
+' "$_sm_release_tmp" 2>/dev/null)
+  rm -f "$_sm_release_tmp"
+  if [ "$_sm_curl_status" -ne 0 ]; then
+    echo "❌ smartdns: release API request failed (HTTP ${_sm_http_status:-000}, curl $_sm_curl_status${_sm_api_reason:+: $_sm_api_reason})"
+  else
+    echo "❌ smartdns: release metadata lacks a matching x86_64 UI asset (HTTP ${_sm_http_status:-000}${_sm_api_reason:+: $_sm_api_reason})"
+  fi
   return 1
 fi
+rm -f "$_sm_release_tmp"
 IFS=$'\t' read -r SM_TAG SM_VERSION SM_UI_FILE SM_UI_URL <<< "$_release"
 echo "✅ smartdns: latest compatible release $SM_VERSION (tag: $SM_TAG)"
 
