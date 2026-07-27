@@ -122,26 +122,18 @@ _sm_release_tmp=$(mktemp "${TMPDIR:-/tmp}/smartdns-release.XXXXXX") || {
 }
 
 _sm_find_release() {
-  python3 -c '
-import json
-import sys
-
-try:
-    with open(sys.argv[1], encoding="utf-8") as source:
-        release = json.load(source)
-    tag = release.get("tag_name", "")
-    if not release.get("draft") and not release.get("prerelease") and tag.endswith("_with_ui"):
-        version = tag.removesuffix("_with_ui")
-        wanted = f"smartdns_with_ui.{version}.x86_64.ipk"
-        for asset in release.get("assets", []):
-            if asset.get("name") == wanted and asset.get("browser_download_url"):
-                print("\t".join((tag, version, wanted, asset["browser_download_url"]))
-                sys.exit(0)
-except (ValueError, TypeError):
-    pass
-
-sys.exit(1)
-' "$1" 2>/dev/null
+  jq -er '
+    . as $release
+    | .tag_name as $tag
+    | select((.draft | not) and (.prerelease | not))
+    | select($tag | endswith("_with_ui"))
+    | ($tag | sub("_with_ui$"; "")) as $version
+    | ("smartdns_with_ui." + $version + ".x86_64.ipk") as $wanted
+    | .assets[]?
+    | select(.name == $wanted and (.browser_download_url | type == "string" and length > 0))
+    | [$tag, $version, $wanted, .browser_download_url]
+    | @tsv
+  ' "$1" 2>/dev/null
 }
 
 # GitHub 偶尔会在 HTTP 200 的响应中短暂返回未完整展开的 release 元数据。
