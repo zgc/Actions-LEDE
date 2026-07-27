@@ -190,7 +190,8 @@ try:
         tag = response.get("tag_name", "<none>")
         assets = response.get("assets", [])
         names = [asset.get("name", "") for asset in assets if "x86_64" in asset.get("name", "")]
-        print(f"tag={tag}, assets={len(assets)}, x86_64={','.join(names[:4]) or '<none>'}")
+        names_summary = ",".join(names[:4]) or "none"
+        print(f"tag={tag}, assets={len(assets)}, x86_64={names_summary}")
 except (OSError, ValueError, TypeError):
     pass
 ' "$_sm_release_tmp" 2>/dev/null)
