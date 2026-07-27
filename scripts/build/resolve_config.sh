@@ -14,9 +14,26 @@ fail() {
 cd "$OPENWRT_DIR" || fail "unable to enter OpenWrt directory: $OPENWRT_DIR"
 rm -f tmp/.packageinfo tmp/.packagedeps tmp/.packageauxvars tmp/.packageusergroup \
 	tmp/.config-*.in tmp/info/.files-packageinfo* tmp/info/.packageinfo-*
-make prepare-tmpinfo || fail "package metadata refresh failed during $PHASE"
+metadata_log=$(mktemp) || fail "unable to create package metadata log during $PHASE"
+defconfig_log=""
+trap 'rm -f "$metadata_log" "$defconfig_log"' EXIT
+if ! make prepare-tmpinfo >"$metadata_log" 2>&1; then
+	tail -n 80 "$metadata_log" >&2
+	fail "package metadata refresh failed during $PHASE"
+fi
 test -s tmp/.packageinfo || fail "package metadata is empty during $PHASE"
-make defconfig || fail "defconfig failed during $PHASE"
+defconfig_log=$(mktemp) || fail "unable to create defconfig log during $PHASE"
+if ! make defconfig >"$defconfig_log" 2>&1; then
+	grep -E 'recursive dependency detected!|:error:' "$defconfig_log" >&2 || true
+	fail "defconfig failed during $PHASE"
+fi
+# OpenWrt Kconfig can report a recursive dependency yet exit successfully.
+# Treat diagnostic output as a configuration failure instead of compiling from
+# a partially resolved package graph.
+if grep -Eq 'recursive dependency detected!|:error:' "$defconfig_log"; then
+	grep -E 'recursive dependency detected!|:error:' "$defconfig_log" >&2 || true
+	fail "defconfig reported Kconfig errors during $PHASE"
+fi
 
 [ -f "$CONFIG_FILE" ] || exit 0
 missing_packages=""
