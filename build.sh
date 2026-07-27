@@ -45,6 +45,20 @@ DIY_P2_SH="diy-part2.sh"
 # 将 Docker volume 挂载至此，可在容器间复用交叉编译工具链。
 BUILD_CACHE_DIR=${BUILD_CACHE_DIR:-}
 
+prepare_release_dir() {
+  local stale_release
+
+  if [ -e "$RELEASE_DIR" ] && [ ! -w "$RELEASE_DIR" ]; then
+    stale_release="${RELEASE_DIR}.stale.$(date -u +%Y%m%dT%H%M%SZ)"
+    echo "⚠️ Archiving non-writable release directory to $stale_release"
+    mv "$RELEASE_DIR" "$stale_release" || {
+      echo "❌ unable to archive non-writable release directory"
+      exit 1
+    }
+  fi
+  mkdir -p "$RELEASE_DIR" || { echo "❌ failed to create release directory"; exit 1; }
+}
+
 # ============================================================
 # 第二部分之一：构建前置条件
 # ============================================================
@@ -246,7 +260,7 @@ trap - EXIT
 cp -f openwrt/.config config.buildinfo || { echo "❌ failed to save config.buildinfo"; exit 1; }
 echo "✅ Saved expanded config to config.buildinfo"
 
-mkdir -p "$RELEASE_DIR" || { echo "❌ failed to create release directory"; exit 1; }
+prepare_release_dir
 cp -f openwrt/.config "$RELEASE_DIR/config.buildinfo" || { echo "❌ failed to save release config.buildinfo"; exit 1; }
 
 # 只解析唯一的固件输出目录，不能因文件系统遍历顺序让过期 target 目录被误用。
@@ -263,7 +277,13 @@ FIRMWARE_DIR="${firmware_dirs[0]}"
 echo "📦 Firmware directory: $FIRMWARE_DIR"
 
 if [ -d "$FIRMWARE_DIR" ]; then
-  cp -f "$FIRMWARE_DIR"/config.buildinfo "$RELEASE_DIR/${RELEASE_NAME}.target.config.buildinfo" || { echo "❌ missing target config.buildinfo"; exit 1; }
+  if [ -f "$FIRMWARE_DIR/config.buildinfo" ]; then
+    target_config="$FIRMWARE_DIR/config.buildinfo"
+  else
+    target_config="config.buildinfo"
+    echo "⚠️ Target config.buildinfo is unavailable; using the expanded build config"
+  fi
+  cp -f "$target_config" "$RELEASE_DIR/${RELEASE_NAME}.target.config.buildinfo" || { echo "❌ failed to save target config.buildinfo"; exit 1; }
   # 优先查找 combined/EFI 固件镜像，其次才接受任意 .img.gz。
   mapfile -t firmware_files < <(find "$FIRMWARE_DIR" -maxdepth 1 -name "*combined*img.gz" -type f 2>/dev/null)
   if [ "${#firmware_files[@]}" -eq 0 ]; then
