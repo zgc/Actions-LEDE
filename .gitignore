@@ -23,6 +23,7 @@
 
 # Generated firmware, build artifacts & outputs
 /release/
+/release.stale.*/
 /output/
 
 # Log files
