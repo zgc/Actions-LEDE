@@ -17,25 +17,40 @@ Arch="amd64"
 CPU_MODEL="${Arch}-v3"
 CLASH_META_REPOS_VERNESONG=${CLASH_META_REPOS_VERNESONG:-true}
 
+download_file() {
+	local url="$1" destination="$2" temporary
+
+	temporary=$(mktemp "${destination}.tmp.XXXXXX") || return 1
+	if curl --fail --show-error --location --retry 5 --retry-all-errors --retry-delay 2 \
+		--connect-timeout 20 --output "$temporary" "$url" && [ -s "$temporary" ]; then
+		mv -f "$temporary" "$destination" || {
+			rm -f "$temporary"
+			return 1
+		}
+		return 0
+	fi
+	rm -f "$temporary"
+	return 1
+}
+
 download_required() {
 	local url="$1" destination="$2" label="$3"
-	curl --fail --show-error --retry 5 --retry-delay 2 -L "$url" -o "$destination" || {
+	download_file "$url" "$destination" || {
 		echo "❌ $label download failed"
 		exit 1
 	}
-	[ -s "$destination" ] || { echo "❌ $label is empty"; exit 1; }
 }
 
 install_mihomo_latest() {
 	local destination="$1" version asset archive
-	version="$(curl --fail --show-error --retry 5 -L https://api.github.com/repos/MetaCubeX/mihomo/releases/latest 2>/dev/null | grep -E 'tag_name' | grep -E 'v[0-9.]+' -o 2>/dev/null)"
+	version="$(curl --fail --show-error --location --retry 5 --retry-all-errors --retry-delay 2 --connect-timeout 20 https://api.github.com/repos/MetaCubeX/mihomo/releases/latest 2>/dev/null | grep -E 'tag_name' | grep -E 'v[0-9.]+' -o 2>/dev/null)"
 	[ -n "$version" ] || { echo "❌ Mihomo latest version lookup failed"; return 1; }
 	asset="mihomo-linux-${CPU_MODEL}-${version}.gz"
 	archive="$destination/$asset"
-	if ! curl --fail --show-error --retry 5 --retry-delay 2 -L "https://github.com/MetaCubeX/mihomo/releases/download/${version}/${asset}" -o "$archive" || [ ! -s "$archive" ]; then
+	if ! download_file "https://github.com/MetaCubeX/mihomo/releases/download/${version}/${asset}" "$archive"; then
 		asset="mihomo-linux-${Arch}-${version}.gz"
 		archive="$destination/$asset"
-		curl --fail --show-error --retry 5 --retry-delay 2 -L "https://github.com/MetaCubeX/mihomo/releases/download/${version}/${asset}" -o "$archive" || return 1
+		download_file "https://github.com/MetaCubeX/mihomo/releases/download/${version}/${asset}" "$archive" || return 1
 	fi
 	gzip -df "$archive" || return 1
 	[ -f "${archive%.gz}" ] || return 1
@@ -955,7 +970,7 @@ config rule_providers
 mkdir -p package/emortal/luci-app-openclash/root/etc/openclash/core
 if ${CLASH_META_REPOS_VERNESONG}; then
 	CLASH_CORE_TMP=$(mktemp -d)
-	if curl --fail --show-error --retry 5 --retry-delay 2 -L "https://github.com/vernesong/OpenClash/raw/core/dev/smart/clash-linux-${CPU_MODEL}.tar.gz" -o "$CLASH_CORE_TMP/core.tar.gz" && \
+	if download_file "https://github.com/vernesong/OpenClash/raw/core/dev/smart/clash-linux-${CPU_MODEL}.tar.gz" "$CLASH_CORE_TMP/core.tar.gz" && \
 		tar -xzf "$CLASH_CORE_TMP/core.tar.gz" -C "$CLASH_CORE_TMP" && [ -f "$CLASH_CORE_TMP/clash" ]; then
 		install -m 0755 "$CLASH_CORE_TMP/clash" package/emortal/luci-app-openclash/root/etc/openclash/core/clash_meta
 	else
