@@ -1,0 +1,9 @@
+--- a/toolchain/gcc/initial/Makefile
++++ b/toolchain/gcc/initial/Makefile
+@@ -13,5 +13,5 @@
+ define Host/Compile
+-	+$(GCC_MAKE) $(HOST_JOBS) -C $(GCC_BUILD_DIR) \
++	+CCACHE_DISABLE=1 $(GCC_MAKE) $(HOST_JOBS) -C $(GCC_BUILD_DIR) \
+ 		all-build-libiberty \
+ 		all-gcc \
+ 		all-target-libgcc

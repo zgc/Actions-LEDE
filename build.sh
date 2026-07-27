@@ -182,6 +182,10 @@ run_main_build() {
   make -j$(nproc) V=s >> "$BUILD_LOG" 2>&1
 }
 
+has_corrupt_initial_gcc_objects() {
+  find build_dir/toolchain-* -path '*/gcc-*-initial/gcc/*.o' -type f -size 0 -print -quit 2>/dev/null | grep -q .
+}
+
 printf '%s\n' '=== Main build (full log captured locally) ===' > "$BUILD_LOG"
 if run_main_build; then
   BUILD_RC=0
@@ -196,16 +200,22 @@ if [ $BUILD_RC -ne 0 ]; then
     preserve_build_log
     exit $BUILD_RC
   fi
-  echo "⚠️ First attempt failed, cleaning kernel build dir and retrying..."
-  echo "=== target/linux/clean ==="
-  make target/linux/clean V=s 2>/dev/null || true
-  for clean_target in ${RETRY_CLEAN_TARGETS:-}; do
-    case "$clean_target" in
-      package/*/clean) make "$clean_target" V=s 2>/dev/null || true ;;
-      *) echo "❌ invalid RETRY_CLEAN_TARGETS entry: $clean_target"; exit 1 ;;
-    esac
-  done
-  remove_declared_build_paths "${RETRY_CLEAN_PATHS:-}" || exit 1
+  if has_corrupt_initial_gcc_objects; then
+    echo "⚠️ Detected zero-byte initial GCC objects; cleaning only toolchain/gcc/initial before retry."
+    find build_dir/toolchain-* -path '*/gcc-*-initial/gcc/*.o' -type f -size 0 -print
+    make toolchain/gcc/initial/clean V=s 2>/dev/null || true
+  else
+    echo "⚠️ First attempt failed, cleaning kernel build dir and retrying..."
+    echo "=== target/linux/clean ==="
+    make target/linux/clean V=s 2>/dev/null || true
+    for clean_target in ${RETRY_CLEAN_TARGETS:-}; do
+      case "$clean_target" in
+        package/*/clean) make "$clean_target" V=s 2>/dev/null || true ;;
+        *) echo "❌ invalid RETRY_CLEAN_TARGETS entry: $clean_target"; exit 1 ;;
+      esac
+    done
+    remove_declared_build_paths "${RETRY_CLEAN_PATHS:-}" || exit 1
+  fi
   printf '%s\n' '=== Main build retry (full log appended locally) ===' >> "$BUILD_LOG"
   if run_main_build; then
     BUILD_RC=0
