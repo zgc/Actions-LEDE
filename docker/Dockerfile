@@ -5,7 +5,7 @@ ENV TZ=Asia/Shanghai
 ENV FORCE_UNSAFE_CONFIGURE=1
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    ack asciidoc autoconf automake autopoint binutils bison build-essential \
+    ack asciidoc autoconf autogen automake autopoint binutils bison build-essential \
     bzip2 ccache ca-certificates clang cmake cpio curl device-tree-compiler \
     fakeroot flex gawk gcc-multilib g++-multilib gettext genisoimage git gperf \
     gnutls-dev haveged help2man intltool jq libc6-dev-i386 libelf-dev \
