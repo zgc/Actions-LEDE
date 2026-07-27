@@ -381,7 +381,7 @@ return 0
 
 if ! install_pikuzheng_smartdns; then
   rm -rf package/emortal/smartdns
-  echo "⚠️ smartdns: PikuZheng source unavailable; using ImmortalWrt feed smartdns, smartdns-ui and luci-app-smartdns"
+  echo "⚠️ smartdns: PikuZheng enhanced package unavailable; using ImmortalWrt feed smartdns, smartdns-ui and luci-app-smartdns"
 fi
 
 # =============================================================================
