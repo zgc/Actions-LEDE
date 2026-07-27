@@ -129,8 +129,34 @@ for attempt in 1 2 3; do
   sleep $((attempt * 3))
 done
 [ "$feeds_updated" -eq 1 ] || { echo "❌ feeds update failed after 3 attempts"; exit 1; }
-"$GITHUB_WORKSPACE/scripts/build/apply_upstream_compat_patches.sh" "$GITHUB_WORKSPACE" "$PWD"
 ./scripts/feeds install -a || { echo "❌ feeds install failed"; exit 1; }
+
+# 当前上游 trafficshaper 的条件依赖会让未选中的包也进入递归 Kconfig。
+# 仅移除 feeds 生成的链接，不修改上游源码；上游定义变更后自动不再排除。
+exclude_unselected_broken_feed_packages() {
+  local package package_file
+
+  for package in trafficshaper freeradius3; do
+    case "$package" in
+      trafficshaper)
+        package_file="feeds/packages/net/$package/Makefile"
+        grep -q 'PACKAGE_nftables-json||PACKAGE_nftables-nojson' "$package_file" || continue
+        ;;
+      freeradius3)
+        package_file="feeds/packages/net/$package/Config.in"
+        grep -q '^[[:space:]]*depends on PACKAGE_freeradius3-common$' "$package_file" || continue
+        ;;
+    esac
+    if grep -Eq "^CONFIG_PACKAGE_${package}(=y|=m)$" "$GITHUB_WORKSPACE/$CONFIG_FILE"; then
+      echo "❌ $package is selected, but its current upstream Kconfig is recursive"
+      return 1
+    fi
+    ./scripts/feeds uninstall "$package" || return 1
+    echo "⚠️ Excluded unselected $package until its upstream Kconfig is fixed"
+  done
+}
+
+exclude_unselected_broken_feed_packages || exit 1
 for feed_package in ${FEED_FORCE_PACKAGES:-}; do
   case "$feed_package" in
     ''|*[!A-Za-z0-9_.+-]*) echo "❌ invalid FEED_FORCE_PACKAGES entry: $feed_package"; exit 1 ;;
@@ -200,6 +226,11 @@ has_corrupt_initial_gcc_objects() {
   find build_dir/toolchain-* -path '*/gcc-*-initial/gcc/*.o' -type f -size 0 -print -quit 2>/dev/null | grep -q .
 }
 
+rebuild_initial_gcc_without_ccache() {
+  make toolchain/gcc/initial/clean V=s 2>/dev/null || true
+  CCACHE_DISABLE=1 make -j"$(nproc)" toolchain/gcc/initial/compile V=s >> "$BUILD_LOG" 2>&1
+}
+
 printf '%s\n' '=== Main build (full log captured locally) ===' > "$BUILD_LOG"
 if run_main_build; then
   BUILD_RC=0
@@ -215,9 +246,14 @@ if [ $BUILD_RC -ne 0 ]; then
     exit $BUILD_RC
   fi
   if has_corrupt_initial_gcc_objects; then
-    echo "⚠️ Detected zero-byte initial GCC objects; cleaning only toolchain/gcc/initial before retry."
+    echo "⚠️ Detected zero-byte initial GCC objects; rebuilding only toolchain/gcc/initial with ccache disabled."
     find build_dir/toolchain-* -path '*/gcc-*-initial/gcc/*.o' -type f -size 0 -print
-    make toolchain/gcc/initial/clean V=s 2>/dev/null || true
+    if ! rebuild_initial_gcc_without_ccache; then
+      echo "❌ Initial GCC recovery failed"
+      tail -n 200 "$BUILD_LOG" >&2
+      preserve_build_log
+      exit 1
+    fi
   else
     echo "⚠️ First attempt failed, cleaning kernel build dir and retrying..."
     echo "=== target/linux/clean ==="
