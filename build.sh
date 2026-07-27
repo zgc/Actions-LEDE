@@ -115,6 +115,7 @@ for attempt in 1 2 3; do
   sleep $((attempt * 3))
 done
 [ "$feeds_updated" -eq 1 ] || { echo "❌ feeds update failed after 3 attempts"; exit 1; }
+"$GITHUB_WORKSPACE/scripts/build/apply_upstream_compat_patches.sh" "$GITHUB_WORKSPACE" "$PWD"
 ./scripts/feeds install -a || { echo "❌ feeds install failed"; exit 1; }
 for feed_package in ${FEED_FORCE_PACKAGES:-}; do
   case "$feed_package" in
