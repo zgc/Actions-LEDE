@@ -49,7 +49,19 @@ fi
 	exit 1
 }
 
-if ! grep -q '^\s*depends on PACKAGE_freeradius3-common$' "$FREERADIUS_CONFIG"; then
+FREERADIUS_MAKEFILE="$FEED_ROOT/net/freeradius3/Makefile"
+if grep -q '^\s*depends on PACKAGE_freeradius3-common$' "$FREERADIUS_CONFIG" && \
+   grep -q 'FREERADIUS3_OPENSSL:libopenssl' "$FREERADIUS_MAKEFILE"; then
+	freeradius_patch_needed=1
+elif ! grep -q '^\s*depends on PACKAGE_freeradius3-common$' "$FREERADIUS_CONFIG" && \
+     ! grep -q 'FREERADIUS3_OPENSSL:libopenssl' "$FREERADIUS_MAKEFILE"; then
+	freeradius_patch_needed=0
+else
+	echo "❌ FreeRADIUS compatibility state is neither upstream nor the known fixed form"
+	exit 1
+fi
+
+if [ "$freeradius_patch_needed" -eq 0 ]; then
 	echo "✅ FreeRADIUS recursive-Kconfig fix already present upstream"
 else
 	patch --batch --dry-run -d "$FEED_ROOT" -p1 < "$FREERADIUS_PATCH_FILE" >/dev/null || {
