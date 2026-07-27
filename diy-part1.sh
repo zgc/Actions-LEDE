@@ -207,7 +207,9 @@ _sm_ui_tmp=$(mktemp -d "${TMPDIR:-/tmp}/smartdns-ui.XXXXXX") || {
 }
 trap 'rm -rf "$_sm_ui_tmp"' EXIT
 cd "$_sm_ui_tmp"
-curl --fail --show-error --retry 5 --retry-delay 2 --location "$SM_UI_URL" -o "$SM_UI_FILE" || {
+curl --fail --show-error --retry 5 --retry-all-errors --retry-delay 2 \
+  --retry-max-time 180 --connect-timeout 15 --max-time 90 --location \
+  "$SM_UI_URL" -o "$SM_UI_FILE" || {
   echo "❌ smartdns-ui asset download failed"
   return 1
 }
