@@ -70,6 +70,12 @@ docker compose run --rm \
 | `openwrt-device.conf` | 仅设备仓库维护的发布名、磁盘、版本和私有运行参数。 |
 | `files/` | 仅设备仓库维护的 rootfs overlay，按原路径写入镜像。 |
 
+## 运行时软件包与 SmartDNS
+
+当前基座选择 `CONFIG_USE_APK=y`，目标系统使用 `apk`，不包含旧版 `opkg`。上游 `default-settings-chn` 首启时会设置 `system.@imm_init[0].apk_mirror`，并据此重写自动生成的 `/etc/apk/repositories.d/distfeeds.list`；不要手改该文件。在线安装前先检查该 UCI 值和 `distfeeds.list`，自定义源放入 `customfeeds.list`。
+
+`diy-part1.sh` 查询 PikuZheng SmartDNS 最新的非预发布 `_with_ui` Release，只接受与该 tag 精确对应的 `x86_64` UI 包，并以同一 tag 固定源码。UI 下载会重试瞬态网络错误；只有元数据、下载或包校验最终失败时，才回退到 ImmortalWrt feed 的 `smartdns`、`smartdns-ui` 和 `luci-app-smartdns`。构建后以 release manifest 核对实际打入的版本。
+
 ## 验证要求
 
 每次变更后至少完成以下检查：
