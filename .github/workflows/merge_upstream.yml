@@ -13,10 +13,18 @@ on:
   schedule:
     - cron: '0 */8 * * *'
 
+concurrency:
+  group: firmware-lifecycle-${{ github.repository }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
 jobs:
   merge:
 
     runs-on: ubuntu-latest
+    timeout-minutes: 20
 
     steps:
 

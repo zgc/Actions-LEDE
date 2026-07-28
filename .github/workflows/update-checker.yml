@@ -20,17 +20,36 @@ on:
   schedule:
     - cron: 0 */12 * * *
 
+concurrency:
+  group: firmware-lifecycle-${{ github.repository }}
+  cancel-in-progress: false
+
+permissions:
+  actions: write
+  contents: read
+
 jobs:
   check:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
 
     steps:
 
     - name: Get Commit Hash
       id: getHash
       run: |
-        git clone --depth 1 $REPO_URL -b $REPO_BRANCH .
-        echo "commitHash=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+        for attempt in 1 2 3; do
+          if commit_hash=$(git -c http.sslVersion=tlsv1.2 -c http.version=HTTP/1.1 \
+            ls-remote --exit-code "$REPO_URL" "refs/heads/$REPO_BRANCH" | awk 'NR == 1 { print $1 }') \
+            && [ -n "$commit_hash" ]; then
+            echo "commitHash=$commit_hash" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "⚠️ upstream commit check failed (attempt $attempt/3), retrying..."
+          sleep $((attempt * 3))
+        done
+        echo "::error::unable to resolve $REPO_BRANCH from $REPO_URL"
+        exit 1
 
     - name: Compare Commit Hash
       id: cacheHash
@@ -42,14 +61,14 @@ jobs:
     - name: Save New Commit Hash
       if: steps.cacheHash.outputs.cache-hit != 'true'
       run: |
-        echo ${{ steps.getHash.outputs.commitHash }} | tee .commitHash
+        printf '%s\n' "${{ steps.getHash.outputs.commitHash }}" | tee .commitHash
 
     - name: Trigger build
       if: steps.cacheHash.outputs.cache-hit != 'true'
       uses: peter-evans/repository-dispatch@v1
       with:
         token: ${{ secrets.SEC_TOKEN }}
-        event-type: Source Code Update
+        event-type: source-code-update
 
     - name: Delete workflow runs
       uses: GitRML/delete-workflow-runs@main

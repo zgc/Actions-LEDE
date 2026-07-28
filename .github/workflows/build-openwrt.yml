@@ -19,12 +19,22 @@ name: Build OpenWrt
 
 on:
   repository_dispatch:
+    types: [source-code-update]
   workflow_dispatch:
     inputs:
       ssh:
         description: 'SSH connection to Actions'
         required: false
         default: 'false'
+
+# 发布、缓存和源码树必须由同一条生命周期串行处理，避免并行构建互相覆盖。
+concurrency:
+  group: firmware-lifecycle-${{ github.repository }}
+  cancel-in-progress: false
+
+permissions:
+  actions: write
+  contents: write
 
 env:
   REPO_URL: https://github.com/immortalwrt/immortalwrt
@@ -157,8 +167,8 @@ jobs:
       id: cache_dl
       uses: actions/cache@v4
       with:
-        path: openwrt/dl
-        key: openwrt-dl-${{ env.DEVICE_ARCH }}-${{ hashFiles('feeds.conf.default', 'diy-part1.sh') }}
+        path: /workdir/openwrt/dl
+        key: openwrt-dl-${{ env.DEVICE_ARCH }}-${{ hashFiles('diy-part1.sh') }}
         restore-keys: |
           openwrt-dl-${{ env.DEVICE_ARCH }}-
 
@@ -169,11 +179,11 @@ jobs:
       uses: actions/cache@v4
       with:
         path: |
-          openwrt/staging_dir
-          openwrt/build_dir/target-*
-          openwrt/build_dir/host
-          openwrt/build_dir/hostpkg
-        key: openwrt-toolchain-${{ env.DEVICE_ARCH }}-${{ steps.source_ref.outputs.commit }}-${{ hashFiles('config.seed', 'feeds.conf.default', 'diy-part1.sh', 'diy-part2.sh', 'build.sh', 'scripts/build/**', 'scripts/verify_firmware.sh', 'openwrt-device.conf') }}
+          /workdir/openwrt/staging_dir
+          /workdir/openwrt/build_dir/target-*
+          /workdir/openwrt/build_dir/host
+          /workdir/openwrt/build_dir/hostpkg
+        key: openwrt-toolchain-${{ env.DEVICE_ARCH }}-${{ steps.source_ref.outputs.commit }}-${{ hashFiles('config.seed', 'diy-part1.sh', 'diy-part2.sh', 'build.sh', 'scripts/build/**', 'scripts/verify_firmware.sh', 'openwrt-device.conf') }}
 
     # 缓存 3：ccache（编译器缓存）
     - name: Cache ccache
@@ -181,7 +191,7 @@ jobs:
       uses: actions/cache@v4
       with:
         path: ~/.ccache
-        key: openwrt-ccache-${{ env.DEVICE_ARCH }}-${{ hashFiles('config.seed', 'feeds.conf.default', 'diy-part1.sh', 'diy-part2.sh', 'build.sh', 'scripts/build/**', 'openwrt-device.conf') }}
+        key: openwrt-ccache-${{ env.DEVICE_ARCH }}-${{ hashFiles('config.seed', 'diy-part1.sh', 'diy-part2.sh', 'build.sh', 'scripts/build/**', 'openwrt-device.conf') }}
         restore-keys: |
           openwrt-ccache-${{ env.DEVICE_ARCH }}-
 
@@ -221,11 +231,11 @@ jobs:
       if: steps.compile.outputs.status == 'success' && env.UPLOAD_BIN_DIR == 'true'
       with:
         name: OpenWrt_bin_${{ env.DEVICE_NAME }}_${{ env.FILE_DATE }}
-        path: openwrt/bin
+        path: /workdir/openwrt/bin
 
     - name: Publish canonical release directory
       id: organize
-      if: env.UPLOAD_FIRMWARE == 'true' && !cancelled()
+      if: ${{ success() && env.UPLOAD_FIRMWARE == 'true' }}
       run: |
         set -euo pipefail
         release_dir="$GITHUB_WORKSPACE/release"
@@ -244,14 +254,14 @@ jobs:
 
     - name: Upload firmware directory
       uses: actions/upload-artifact@v4
-      if: steps.organize.outputs.status == 'success' && !cancelled()
+      if: ${{ success() && steps.organize.outputs.status == 'success' }}
       with:
         name: OpenWrt_firmware_${{ env.DEVICE_NAME }}_${{ env.FILE_DATE }}
         path: ${{ env.FIRMWARE }}
 
     - name: Upload firmware to cowtransfer
       id: cowtransfer
-      if: steps.organize.outputs.status == 'success' && env.UPLOAD_COWTRANSFER == 'true' && !cancelled()
+      if: ${{ success() && steps.organize.outputs.status == 'success' && env.UPLOAD_COWTRANSFER == 'true' }}
       run: |
         curl -fsSL git.io/file-transfer | sh
         ./transfer cow --block 2621440 -s -p 64 --no-progress ${FIRMWARE} 2>&1 | tee cowtransfer.log
@@ -260,7 +270,7 @@ jobs:
 
     - name: Upload firmware to WeTransfer
       id: wetransfer
-      if: steps.organize.outputs.status == 'success' && env.UPLOAD_WETRANSFER == 'true' && !cancelled()
+      if: ${{ success() && steps.organize.outputs.status == 'success' && env.UPLOAD_WETRANSFER == 'true' }}
       run: |
         curl -fsSL git.io/file-transfer | sh
         ./transfer wet -s -p 16 --no-progress ${FIRMWARE} 2>&1 | tee wetransfer.log
@@ -269,7 +279,7 @@ jobs:
 
     - name: Generate release tag
       id: tag
-      if: env.UPLOAD_RELEASE == 'true' && !cancelled()
+      if: ${{ success() && steps.organize.outputs.status == 'success' && env.UPLOAD_RELEASE == 'true' }}
       run: |
         echo "release_tag=$(date +"%Y.%m.%d-%H%M")" >> $GITHUB_OUTPUT
         touch release.txt
@@ -279,7 +289,7 @@ jobs:
 
     - name: Upload firmware to release
       uses: softprops/action-gh-release@v1
-      if: steps.tag.outputs.status == 'success' && !cancelled()
+      if: ${{ success() && steps.tag.outputs.status == 'success' }}
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       with:
@@ -295,7 +305,7 @@ jobs:
 
     - name: Remove old Releases
       uses: dev-drprasad/delete-older-releases@v0.1.0
-      if: env.UPLOAD_RELEASE == 'true' && !cancelled()
+      if: ${{ success() && steps.tag.outputs.status == 'success' && env.UPLOAD_RELEASE == 'true' }}
       with:
         keep_latest: 3
         delete_tags: true
