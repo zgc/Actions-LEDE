@@ -5,7 +5,7 @@
 #
 # 设备专用覆盖项：在同目录创建 openwrt-device.conf
 # openwrt-device.conf 示例：
-#   RELEASE_NAME=nuc8
+#   RELEASE_NAME=device-name
 #
 
 # ============================================================
