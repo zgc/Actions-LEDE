@@ -107,9 +107,49 @@ if [ -d feeds ] && find feeds -xdev \( ! -uid "$workspace_uid" -o ! -gid "$works
   rm -rf feeds || { echo "❌ unable to remove stale feeds cache"; exit 1; }
 fi
 
+# 删除已损坏的生成 feed 缓存；feeds/ 不是用户源码，下一次更新会按配置重新拉取。
+remove_corrupt_feed_cache() {
+  local feed_name="$1"
+
+  case "$feed_name" in
+    ''|*[!A-Za-z0-9_-]*)
+      echo "❌ invalid feed name: $feed_name" >&2
+      return 1
+      ;;
+  esac
+
+  rm -rf -- "feeds/$feed_name"
+  rm -f -- "feeds/$feed_name.index"
+}
+
+# 验证 feeds 工具报告成功后，每个声明的 Git feed 都有可解析的 HEAD。
+# 单个 feed 失败时 feeds 工具可能只输出 "failed, ignore" 并返回成功，不能据此继续编译。
+verify_configured_feed_heads() {
+  local source feed_name ignored
+
+  while read -r source feed_name ignored; do
+    case "$source" in
+      src-git|src-git-full)
+        if ! git -C "feeds/$feed_name" rev-parse --verify HEAD >/dev/null 2>&1; then
+          echo "⚠️ feed '$feed_name' has no valid Git HEAD; rebuilding its generated cache"
+          remove_corrupt_feed_cache "$feed_name" || return 1
+          return 1
+        fi
+        ;;
+    esac
+  done < feeds.conf.default
+}
+
 # 恢复同一 UID 的持久化 feed 工作树，减少不必要的重新拉取。
 for feed_dir in feeds/*/; do
   if [ -d "$feed_dir/.git" ]; then
+    feed_name=${feed_dir#feeds/}
+    feed_name=${feed_name%/}
+    if ! git -C "$feed_dir" rev-parse --verify HEAD >/dev/null 2>&1; then
+      echo "⚠️ feed '$feed_name' has no valid Git HEAD; rebuilding its generated cache"
+      remove_corrupt_feed_cache "$feed_name" || exit 1
+      continue
+    fi
     rm -f "$feed_dir/.git/index.lock"
     git -C "$feed_dir" checkout -- . 2>/dev/null
   fi
@@ -121,7 +161,7 @@ if ! GITHUB_WORKSPACE="$GITHUB_WORKSPACE" BUILD_CACHE_DIR="$BUILD_CACHE_DIR" "$G
 fi
 feeds_updated=0
 for attempt in 1 2 3; do
-  if ./scripts/feeds update -f -a; then
+  if ./scripts/feeds update -f -a && verify_configured_feed_heads; then
     feeds_updated=1
     break
   fi
