@@ -98,6 +98,7 @@ configure_firstboot_defaults() {
 	sed -i '/^exit 0$/i uci -q add_list uhttpd.main.listen_https="[::]:443"' "$defaults"
 	sed -i '/^exit 0$/i uci -q commit uhttpd' "$defaults"
 	sed -i '/^exit 0$/i uci set firewall.@defaults[0].flow_offloading="1"' "$defaults"
+	sed -i '/^exit 0$/i uci set firewall.@defaults[0].fullcone="1"' "$defaults"
 	sed -i '/^exit 0$/i uci commit firewall' "$defaults"
 	sed -i '/^exit 0$/i sysctl -qw net.ipv4.tcp_congestion_control=bbr || true' "$defaults"
 	sed -i '/^exit 0$/i grep -qxF "net.ipv4.tcp_congestion_control=bbr" /etc/sysctl.conf || echo "net.ipv4.tcp_congestion_control=bbr" >> /etc/sysctl.conf' "$defaults"
