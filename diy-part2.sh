@@ -80,6 +80,9 @@ deploy_base_rootfs_tools() {
 	chmod +x package/base-files/files/etc/verify_rootfs.sh
 	cp "$GITHUB_WORKSPACE/scripts/rootfs-integrity-check" package/base-files/files/etc/init.d/rootfs-integrity-check
 	chmod +x package/base-files/files/etc/init.d/rootfs-integrity-check
+	mkdir -p package/base-files/files/etc/hotplug.d/iface
+	cp "$GITHUB_WORKSPACE/scripts/zerotier-wan-hotplug" package/base-files/files/etc/hotplug.d/iface/95-zerotier-wan
+	chmod +x package/base-files/files/etc/hotplug.d/iface/95-zerotier-wan
 }
 
 configure_firstboot_defaults() {

@@ -1,0 +1,9 @@
+#!/bin/sh
+
+# Rebind ZeroTier after a dynamic WAN address becomes available.
+[ "$ACTION" = "ifup" ] || exit 0
+[ "$INTERFACE" = "wan" ] || exit 0
+
+/etc/init.d/zerotier enabled || exit 0
+logger -t zerotier-wan "WAN is ready; restarting ZeroTier to bind the WAN address"
+/etc/init.d/zerotier restart
