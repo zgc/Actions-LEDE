@@ -35,6 +35,14 @@ RELEASE_NAME=${RELEASE_NAME:-${DEVICE_NAME:-firmware}}
 REPO_URL="https://github.com/immortalwrt/immortalwrt"
 REPO_BRANCH="${REPO_BRANCH:-master}"
 REPO_COMMIT="${REPO_COMMIT:-}"
+UPSTREAM_LOCK_FILE="$GITHUB_WORKSPACE/upstream.lock"
+if [ -z "$REPO_COMMIT" ] && [ -f "$UPSTREAM_LOCK_FILE" ]; then
+  REPO_COMMIT=$(tr -d '[:space:]' < "$UPSTREAM_LOCK_FILE")
+fi
+if [ -n "$REPO_COMMIT" ] && ! [[ "$REPO_COMMIT" =~ ^[0-9a-f]{40}$ ]]; then
+  echo "❌ invalid OpenWrt commit in REPO_COMMIT or upstream.lock"
+  exit 1
+fi
 export OPENWRT_REF="$REPO_BRANCH"
 FEEDS_CONF="feeds.conf.default"
 CONFIG_FILE="config.seed"
@@ -169,42 +177,12 @@ for attempt in 1 2 3; do
   sleep $((attempt * 3))
 done
 [ "$feeds_updated" -eq 1 ] || { echo "❌ feeds update failed after 3 attempts"; exit 1; }
-./scripts/feeds install -a || { echo "❌ feeds install failed"; exit 1; }
-
-# 当前上游 trafficshaper、freeradius3、clixon 的依赖定义会让未选中的包
-# 也进入递归 Kconfig。仅移除 feeds 生成的链接，不修改上游源码；
-# 上游定义变更后自动不再排除。
-exclude_unselected_broken_feed_packages() {
-  local package package_file
-
-  for package in trafficshaper freeradius3 clixon; do
-    case "$package" in
-      trafficshaper)
-        package_file="feeds/packages/net/$package/Makefile"
-        grep -q 'PACKAGE_nftables-json||PACKAGE_nftables-nojson' "$package_file" || continue
-        ;;
-      freeradius3)
-        package_file="feeds/packages/net/$package/Config.in"
-        grep -q '^[[:space:]]*depends on PACKAGE_freeradius3-common$' "$package_file" || continue
-        ;;
-      clixon)
-        # clixon 选中 libcurl，又经由 cligen 依赖 libxml2，与核心 gettext-full
-        # 的 libintl-full→libxml2、libcurl→libidn2→libintl-full 组成递归环。
-        package_file="feeds/packages/utils/$package/Makefile"
-        grep -q '+libcurl' "$package_file" || continue
-        grep -q '^[[:space:]]*DEPENDS:=libxml2$' "feeds/packages/utils/cligen/Makefile" || continue
-        ;;
-    esac
-    if grep -Eq "^CONFIG_PACKAGE_${package}(=y|=m)$" "$GITHUB_WORKSPACE/$CONFIG_FILE"; then
-      echo "❌ $package is selected, but its current upstream Kconfig is recursive"
-      return 1
-    fi
-    ./scripts/feeds uninstall "$package" || return 1
-    echo "⚠️ Excluded unselected $package until its upstream Kconfig is fixed"
-  done
+"$GITHUB_WORKSPACE/scripts/build/install_selected_feeds.sh" \
+  "$GITHUB_WORKSPACE/openwrt" "$GITHUB_WORKSPACE/$CONFIG_FILE" || {
+  echo "❌ selected feed installation failed"
+  exit 1
 }
 
-exclude_unselected_broken_feed_packages || exit 1
 for feed_package in ${FEED_FORCE_PACKAGES:-}; do
   case "$feed_package" in
     ''|*[!A-Za-z0-9_.+-]*) echo "❌ invalid FEED_FORCE_PACKAGES entry: $feed_package"; exit 1 ;;

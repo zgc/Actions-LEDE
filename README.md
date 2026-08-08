@@ -1,6 +1,6 @@
 # Actions-LEDE
 
-基于 [ImmortalWrt](https://github.com/immortalwrt/immortalwrt) `master` 的通用固件构建基座。它负责公共构建逻辑、软件包选择和 CI；设备仓库通过 rebase 继承本仓库，并只维护设备差异。
+基于 [ImmortalWrt](https://github.com/immortalwrt/immortalwrt) `master` 的通用固件构建基座。它负责公共构建逻辑、软件包选择和 CI；设备仓库通过 rebase 继承本仓库，并只维护设备差异。实际构建提交由 `upstream.lock` 固定，不会在普通构建时跟随 `master` 漂移。
 
 ## 设计边界
 
@@ -8,16 +8,21 @@
 - **设备仓库**：`config.seed`、`openwrt-device.conf`、`files/`、端口映射、恢复脚本和硬件专用模块。
 - **同步方式**：设备仓库执行 `git fetch base main && git rebase base/main`，解决冲突时保留设备参数，不把设备配置回流到 Base。
 - **构建输入**：只从干净且已提交的工作树构建，避免无法复现的本地试验进入固件。
+- **上游边界**：不修改 ImmortalWrt 源码。只有完成候选版本的配置解析和固件验证后，才更新 `upstream.lock`；设备仓库随 Base rebase 继承同一提交。
 
 ## 构建流程
 
 `build.sh` 是唯一的构建编排入口，流程如下：
 
-1. 固定 ImmortalWrt 源码版本并恢复可复用缓存。
-2. 更新和安装 feeds，运行 `diy-part1.sh` 获取自定义软件包。
+1. 读取 `upstream.lock` 固定 ImmortalWrt 源码版本并恢复可复用缓存。
+2. 更新 feeds，运行 `diy-part1.sh` 获取自定义软件包，只注册 `config.seed` 请求的软件包及 feeds 自动解析出的依赖。
 3. 两次解析 `config.seed`：先验证 feed 依赖，再验证 DIY 新增的软件包和设备 overlay。
 4. 并行下载、并行编译，并在失败时保存完整日志。
 5. 导出镜像、manifest、展开后的配置和 MD5；验证 SquashFS 与 LuCI 静态资源后才视为成功。
+
+## 上游更新
+
+日常构建不更新上游提交。升级时先在 Base 修改 `upstream.lock` 为候选 ImmortalWrt commit，完成配置解析、Base 构建和至少一个设备固件验证后再提交；随后将 Base rebase 到各设备仓库并逐个构建。构建环境变量 `REPO_COMMIT` 仅用于这种候选验证，不能替代提交锁定值。
 
 ## 本地 Docker 构建
 
