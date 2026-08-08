@@ -171,12 +171,13 @@ done
 [ "$feeds_updated" -eq 1 ] || { echo "❌ feeds update failed after 3 attempts"; exit 1; }
 ./scripts/feeds install -a || { echo "❌ feeds install failed"; exit 1; }
 
-# 当前上游 trafficshaper 的条件依赖会让未选中的包也进入递归 Kconfig。
-# 仅移除 feeds 生成的链接，不修改上游源码；上游定义变更后自动不再排除。
+# 当前上游 trafficshaper、freeradius3、clixon 的依赖定义会让未选中的包
+# 也进入递归 Kconfig。仅移除 feeds 生成的链接，不修改上游源码；
+# 上游定义变更后自动不再排除。
 exclude_unselected_broken_feed_packages() {
   local package package_file
 
-  for package in trafficshaper freeradius3; do
+  for package in trafficshaper freeradius3 clixon; do
     case "$package" in
       trafficshaper)
         package_file="feeds/packages/net/$package/Makefile"
@@ -185,6 +186,13 @@ exclude_unselected_broken_feed_packages() {
       freeradius3)
         package_file="feeds/packages/net/$package/Config.in"
         grep -q '^[[:space:]]*depends on PACKAGE_freeradius3-common$' "$package_file" || continue
+        ;;
+      clixon)
+        # clixon 选中 libcurl，又经由 cligen 依赖 libxml2，与核心 gettext-full
+        # 的 libintl-full→libxml2、libcurl→libidn2→libintl-full 组成递归环。
+        package_file="feeds/packages/utils/$package/Makefile"
+        grep -q '+libcurl' "$package_file" || continue
+        grep -q '^[[:space:]]*DEPENDS:=libxml2$' "feeds/packages/utils/cligen/Makefile" || continue
         ;;
     esac
     if grep -Eq "^CONFIG_PACKAGE_${package}(=y|=m)$" "$GITHUB_WORKSPACE/$CONFIG_FILE"; then
@@ -215,7 +223,10 @@ done
 [ -e "$GITHUB_WORKSPACE/$CONFIG_FILE" ] && cp "$GITHUB_WORKSPACE/$CONFIG_FILE" .config
 # 在 DIY 创建仓库自有软件包覆盖前，先验证 feed 软件包（含 SmartDNS 回退路径）。
 "$GITHUB_WORKSPACE/scripts/build/resolve_config.sh" \
-  "$GITHUB_WORKSPACE/openwrt" "$GITHUB_WORKSPACE/$CONFIG_FILE" "before diy-part2.sh"
+  "$GITHUB_WORKSPACE/openwrt" "$GITHUB_WORKSPACE/$CONFIG_FILE" "before diy-part2.sh" || {
+  echo "❌ config resolution failed before diy-part2.sh"
+  exit 1
+}
 
 popd
 
@@ -230,7 +241,10 @@ fi
 # DIY 会新增软件包定义和设备 overlay，因此下载和编译前必须再次解析配置；
 # 该步骤与 feed 验证刻意分离。
 "$GITHUB_WORKSPACE/scripts/build/resolve_config.sh" \
-  "$GITHUB_WORKSPACE/openwrt" "$GITHUB_WORKSPACE/$CONFIG_FILE" "after diy-part2.sh"
+  "$GITHUB_WORKSPACE/openwrt" "$GITHUB_WORKSPACE/$CONFIG_FILE" "after diy-part2.sh" || {
+  echo "❌ config resolution failed after diy-part2.sh"
+  exit 1
+}
 
 # ============================================================
 # 第六部分：下载源码包
