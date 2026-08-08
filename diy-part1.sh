@@ -123,27 +123,30 @@ _sm_release_tmp=$(mktemp "${TMPDIR:-/tmp}/smartdns-release.XXXXXX") || {
 
 _sm_find_release() {
   jq -er '
-    . as $release
-    | .tag_name as $tag
-    | select((.draft | not) and (.prerelease | not))
-    | select($tag | endswith("_with_ui"))
-    | ($tag | sub("_with_ui$"; "")) as $version
-    | ("smartdns_with_ui." + $version + ".x86_64.ipk") as $wanted
-    | .assets[]?
-    | select(.name == $wanted and (.browser_download_url | type == "string" and length > 0))
-    | [$tag, $version, $wanted, .browser_download_url]
-    | @tsv
+    first(
+      .[]
+      | select((.draft | not) and (.prerelease | not))
+      | .tag_name as $tag
+      | select($tag | endswith("_with_ui"))
+      | ($tag | sub("_with_ui$"; "")) as $version
+      | ("smartdns_with_ui." + $version + ".x86_64.ipk") as $wanted
+      | .assets[]?
+      | select(.name == $wanted and (.browser_download_url | type == "string" and length > 0))
+      | [$tag, $version, $wanted, .browser_download_url]
+    ) | @tsv
   ' "$1" 2>/dev/null
 }
 
-# GitHub 偶尔会在 HTTP 200 的响应中短暂返回未完整展开的 release 元数据。
-# 这种情况与“最新发布确实没有 x86_64 UI”不同，短暂重试后才允许回退 feed。
+# 使用 release 列表而不是 releases/latest：上游偶尔会发布没有附件的 canary
+# 版本，latest 命中它时会跳过并继续选择更早的可用版本。
+# GitHub 偶尔会在 HTTP 200 的响应中短暂返回未完整展开的 release 元数据，
+# 短暂重试后才允许回退 feed。
 _release=""
 for _sm_metadata_attempt in 1 2 3; do
   _sm_http_status=$(curl --fail-with-body --silent --show-error --retry 5 --retry-delay 2 \
     --connect-timeout 15 --max-time 90 --location \
     --output "$_sm_release_tmp" --write-out '%{http_code}' \
-    "https://api.github.com/repos/PikuZheng/smartdns/releases/latest")
+    "https://api.github.com/repos/PikuZheng/smartdns/releases?per_page=30")
   _sm_curl_status=$?
   _release=$(_sm_find_release "$_sm_release_tmp" || true)
   [ -n "$_release" ] && break
@@ -178,7 +181,16 @@ import sys
 try:
     with open(sys.argv[1], encoding="utf-8") as source:
         response = json.load(source)
-    if isinstance(response, dict):
+    if isinstance(response, list) and response and isinstance(response[0], dict):
+        release = response[0]
+        tag = release.get("tag_name", "<none>")
+        assets = release.get("assets", []) or []
+        names = [asset.get("name", "") for asset in assets if isinstance(asset, dict) and "x86_64" in asset.get("name", "")]
+        names_summary = ",".join(names[:4]) or "none"
+        print(f"newest tag={tag}, assets={len(assets)}, x86_64={names_summary}")
+    elif isinstance(response, list):
+        print("release list is empty")
+    elif isinstance(response, dict):
         tag = response.get("tag_name", "<none>")
         assets = response.get("assets", [])
         names = [asset.get("name", "") for asset in assets if "x86_64" in asset.get("name", "")]
@@ -376,6 +388,10 @@ return 0
 
 if ! install_pikuzheng_smartdns; then
   rm -rf package/emortal/smartdns
+  # 清理上一次构建遗留的 smartdns 元数据。否则 feeds install 会把这些包误判为
+  # core package 而跳过安装，导致 feed 回退版本无法被 defconfig 选中。
+  rm -f tmp/info/.packageinfo-smartdns tmp/info/.packageinfo-smartdns-ui \
+    tmp/info/.packageinfo-luci-app-smartdns
   echo "⚠️ smartdns: PikuZheng enhanced package unavailable; using ImmortalWrt feed smartdns, smartdns-ui and luci-app-smartdns"
 fi
 
