@@ -13,6 +13,9 @@ mapfile -t requested_packages < <(sed -n 's/^CONFIG_PACKAGE_\([A-Za-z0-9_-]*\)=y
 }
 
 # feeds/ 是可重建的生成链接；重新注册精确的配置闭包，不修改 feeds 源码。
+# feeds install 会读取 tmp/info 判断已装/核心包；上一次构建残留的元数据可能把
+# 同名 feed 包误判为 core 而跳过，因此先清空生成的包元数据再注册。
+rm -f tmp/.packageinfo tmp/info/.packageinfo-*
 feed_log=$(mktemp)
 trap 'rm -f "$feed_log"' EXIT
 if ! ./scripts/feeds uninstall -a >"$feed_log" 2>&1; then
