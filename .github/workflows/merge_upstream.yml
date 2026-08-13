@@ -13,6 +13,10 @@ on:
   schedule:
     - cron: '0 */8 * * *'
 
+env:
+  UPSTREAM_REPO: https://github.com/P3TERX/Actions-OpenWrt
+  UPSTREAM_BRANCH: main
+
 concurrency:
   group: firmware-lifecycle-${{ github.repository }}
   cancel-in-progress: false
@@ -41,13 +45,25 @@ jobs:
         git config --local user.email "action@github.com"
         git config --local user.name "GitHub Action"
 
-    - name: Load upstream commits
+    - name: Check upstream
+      id: upstream
       run:  |
-        git remote add upstream https://github.com/P3TERX/Actions-OpenWrt
-        git fetch upstream
-        git rebase upstream/main
+        git remote remove upstream >/dev/null 2>&1 || true
+        git remote add upstream "$UPSTREAM_REPO"
+        git fetch --force upstream
+        if git merge-base --is-ancestor "upstream/$UPSTREAM_BRANCH" HEAD; then
+          echo "changed=false"
+          echo "✅ upstream already up to date"
+        else
+          echo "changed=true"
+        fi
+
+    - name: Rebase upstream commits
+      if: steps.upstream.outputs.changed == 'true'
+      run: git rebase "upstream/$UPSTREAM_BRANCH"
 
     - name: Push Commits
+      if: steps.upstream.outputs.changed == 'true'
       env:
         DOWNSTREAM_BRANCH: main
       run: git push --force-with-lease origin $DOWNSTREAM_BRANCH

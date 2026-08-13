@@ -9,6 +9,7 @@
 - **同步方式**：设备仓库执行 `git fetch base main && git rebase base/main`，解决冲突时保留设备参数，不把设备配置回流到 Base。
 - **构建输入**：只从干净且已提交的工作树构建，避免无法复现的本地试验进入固件。
 - **上游边界**：不修改 ImmortalWrt 源码。只有完成候选版本的配置解析和固件验证后，才更新 `upstream.lock`；设备仓库随 Base rebase 继承同一提交。
+- **通用组件**：MMC/SDHCI、i915 GuC/HuC、Intel HDA 等通用覆盖由 Base 统一维护，设备仓库只追加硬件专用模块。
 
 ## 构建流程
 
@@ -23,6 +24,10 @@
 ## 上游更新
 
 日常构建不更新上游提交。升级时先在 Base 修改 `upstream.lock` 为候选 ImmortalWrt commit，完成配置解析、Base 构建和至少一个设备固件验证后再提交；随后将 Base rebase 到各设备仓库并逐个构建。构建环境变量 `REPO_COMMIT` 仅用于这种候选验证，不能替代提交锁定值。
+
+## CI 自动同步（merge_upstream）
+
+`merge_upstream.yml` 保留“上游有更新则自动 rebase 到下游”的设计：Base 每 8 小时检查 `P3TERX/Actions-OpenWrt` 的 `main`，也可在 GitHub Actions 手动触发。没有新提交时直接跳过，不产生无意义的历史重写；有更新时执行 `git rebase upstream/main`，随后用 `git push --force-with-lease` 推送。冲突时工作流失败并保留人工处理，不允许用 `merge=ours` 静默覆盖。因为这是历史重写，任何本地克隆在自动同步后都必须重新 fetch 并对齐 `origin/main`，不要基于旧历史继续提交。
 
 ## 本地 Docker 构建
 
