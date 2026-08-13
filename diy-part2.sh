@@ -618,6 +618,9 @@ config groups
 	option disable_udp 'false'
 	option test_url 'http://cp.cloudflare.com/generate_204'
 	option test_interval '10'
+	option other_parameters '    lazy: true
+    timeout: 5000
+    max-failed-times: 3'
 	option config 'config.yaml'
 
 config groups
@@ -627,6 +630,9 @@ config groups
 	option disable_udp 'false'
 	option test_url 'http://cp.cloudflare.com/generate_204'
 	option test_interval '10'
+	option other_parameters '    lazy: true
+    timeout: 5000
+    max-failed-times: 3'
 	option config 'config.yaml'
 
 config groups
