@@ -234,6 +234,7 @@ write_custom_build_provenance() {
 		for artifact in \
 			package/emortal/luci-app-openclash/root/etc/openclash/core/clash_meta \
 			package/emortal/luci-app-openclash/root/etc/openclash/GeoIP.dat \
+			package/emortal/luci-app-openclash/root/etc/openclash/ASN.mmdb \
 			package/emortal/luci-app-openclash/root/etc/openclash/Model.bin; do
 			[ -f "$artifact" ] && echo "${artifact##*/}.sha256=$(sha256sum "$artifact" | awk '{print $1}')"
 		done
@@ -994,6 +995,7 @@ else
 	rm -rf "$CLASH_CORE_TMP"
 fi
 download_required "https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download/geoip.dat" package/emortal/luci-app-openclash/root/etc/openclash/GeoIP.dat "GeoIP data"
+download_required "https://github.com/xishang0128/geoip/releases/latest/download/GeoLite2-ASN.mmdb" package/emortal/luci-app-openclash/root/etc/openclash/ASN.mmdb "ASN data"
 download_required "https://github.com/vernesong/mihomo/releases/download/LightGBM-Model/Model-large.bin" package/emortal/luci-app-openclash/root/etc/openclash/Model.bin "Mihomo model"
 
 # =============================================================================
