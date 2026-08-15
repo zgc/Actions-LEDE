@@ -256,7 +256,7 @@ configure_custom_packages || exit 1
 # OpenClash 默认配置
 # =============================================================================
 
-echo '
+echo "
 
 config openclash 'config'
 	option proxy_port '7892'
@@ -726,7 +726,7 @@ config config_overwrite
 	option order '1'
 	list config 'all'
 
-' >package/emortal/luci-app-openclash/root/etc/config/openclash
+" >package/emortal/luci-app-openclash/root/etc/config/openclash
 
 # OpenClash 0.47.x 不再消费 UCI rule_providers；Rabbit-Spec 规则集统一走覆写模块。
 mkdir -p package/emortal/luci-app-openclash/root/etc/openclash/overwrite
@@ -761,7 +761,7 @@ download_required "https://github.com/vernesong/mihomo/releases/download/LightGB
 # SmartDNS 默认配置
 # =============================================================================
 mkdir -p files/etc/config
-echo '
+echo "
 
 config smartdns
 	option server_name 'smartdns'
@@ -946,7 +946,7 @@ config client-rule
 config ip-rule
 
 
-' >files/etc/config/smartdns
+" >files/etc/config/smartdns
 
 # =============================================================================
 # 构建元数据与设备配置
