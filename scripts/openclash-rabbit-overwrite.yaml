@@ -1,0 +1,185 @@
+[YAML]
+rule-providers:
+  AntiAd:
+    type: http
+    behavior: domain
+    format: yaml
+    interval: 43200
+    url: https://anti-ad.net/clash.yaml
+    path: ./rule_provider/AntiAd.yaml
+  RejectDomainset:
+    type: http
+    behavior: domain
+    format: text
+    interval: 43200
+    url: https://ruleset.skk.moe/Clash/domainset/reject.txt
+    path: ./rule_provider/RejectDomainset
+  RejectNonIp:
+    type: http
+    behavior: classical
+    format: text
+    interval: 43200
+    url: https://ruleset.skk.moe/Clash/non_ip/reject.txt
+    path: ./rule_provider/RejectNonIp
+  AIGC:
+    type: http
+    behavior: classical
+    format: yaml
+    interval: 43200
+    url: https://raw.githubusercontent.com/Rabbit-Spec/Clash/Master/Rules/AIGC.yaml
+    path: ./rule_provider/AIGC.yaml
+  Apple:
+    type: http
+    behavior: classical
+    format: yaml
+    interval: 43200
+    url: https://raw.githubusercontent.com/Rabbit-Spec/Clash/Master/Rules/Apple.yaml
+    path: ./rule_provider/Apple.yaml
+  Microsoft:
+    type: http
+    behavior: classical
+    format: yaml
+    interval: 43200
+    url: https://raw.githubusercontent.com/Rabbit-Spec/Clash/Master/Rules/Microsoft.yaml
+    path: ./rule_provider/Microsoft.yaml
+  Telegram:
+    type: http
+    behavior: classical
+    format: yaml
+    interval: 43200
+    url: https://raw.githubusercontent.com/Rabbit-Spec/Clash/Master/Rules/Telegram.yaml
+    path: ./rule_provider/Telegram.yaml
+  Game:
+    type: http
+    behavior: classical
+    format: yaml
+    interval: 43200
+    url: https://raw.githubusercontent.com/Rabbit-Spec/Clash/Master/Rules/Game.yaml
+    path: ./rule_provider/Game.yaml
+  YouTube:
+    type: http
+    behavior: classical
+    format: yaml
+    interval: 43200
+    url: https://raw.githubusercontent.com/Rabbit-Spec/Clash/Master/Rules/YouTube.yaml
+    path: ./rule_provider/YouTube.yaml
+  Netflix:
+    type: http
+    behavior: classical
+    format: yaml
+    interval: 43200
+    url: https://raw.githubusercontent.com/Rabbit-Spec/Clash/Master/Rules/Netflix.yaml
+    path: ./rule_provider/Netflix.yaml
+  Spotify:
+    type: http
+    behavior: classical
+    format: yaml
+    interval: 43200
+    url: https://raw.githubusercontent.com/Rabbit-Spec/Clash/Master/Rules/Spotify.yaml
+    path: ./rule_provider/Spotify.yaml
+  TikTok:
+    type: http
+    behavior: classical
+    format: yaml
+    interval: 43200
+    url: https://raw.githubusercontent.com/Rabbit-Spec/Clash/Master/Rules/TikTok.yaml
+    path: ./rule_provider/TikTok.yaml
+  BiliBili:
+    type: http
+    behavior: classical
+    format: yaml
+    interval: 43200
+    url: https://raw.githubusercontent.com/Rabbit-Spec/Clash/Master/Rules/BiliBili.yaml
+    path: ./rule_provider/BiliBili.yaml
+  ChinaMedia:
+    type: http
+    behavior: classical
+    format: yaml
+    interval: 43200
+    url: https://raw.githubusercontent.com/Rabbit-Spec/Clash/Master/Rules/ChinaMedia.yaml
+    path: ./rule_provider/ChinaMedia.yaml
+  GlobalMedia:
+    type: http
+    behavior: classical
+    format: yaml
+    interval: 43200
+    url: https://raw.githubusercontent.com/Rabbit-Spec/Clash/Master/Rules/GlobalMedia.yaml
+    path: ./rule_provider/GlobalMedia.yaml
+  Proxy:
+    type: http
+    behavior: classical
+    format: yaml
+    interval: 43200
+    url: https://raw.githubusercontent.com/Rabbit-Spec/Clash/Master/Rules/Proxy.yaml
+    path: ./rule_provider/Proxy.yaml
+  China:
+    type: http
+    behavior: classical
+    format: yaml
+    interval: 43200
+    url: https://raw.githubusercontent.com/Rabbit-Spec/Clash/Master/Rules/China.yaml
+    path: ./rule_provider/China.yaml
+  LAN:
+    type: http
+    behavior: classical
+    format: yaml
+    interval: 43200
+    url: https://raw.githubusercontent.com/Rabbit-Spec/Clash/Master/Rules/LAN.yaml
+    path: ./rule_provider/LAN.yaml
+  ChinaCIDR:
+    type: http
+    behavior: classical
+    format: yaml
+    interval: 43200
+    url: https://raw.githubusercontent.com/Rabbit-Spec/Clash/Master/Rules/ChinaCIDR.yaml
+    path: ./rule_provider/ChinaCIDR.yaml
+rule-providers-:
+- Disney
+rules-:
+- RULE-SET,AntiAd,Guard
+- RULE-SET,RejectDomainset,Guard
+- RULE-SET,RejectNonIp,Guard
+- RULE-SET,AIGC,OpenAI
+- RULE-SET,Apple,Apple
+- RULE-SET,Microsoft,Microsoft
+- RULE-SET,Telegram,Telegram
+- RULE-SET,Game,Gamer
+- RULE-SET,YouTube,YouTube
+- RULE-SET,Netflix,Netflix
+- RULE-SET,Disney,Disney+
+- RULE-SET,Spotify,Spotify
+- RULE-SET,TikTok,TikTok
+- RULE-SET,BiliBili,StreamingSE
+- RULE-SET,ChinaMedia,Domestic
+- RULE-SET,GlobalMedia,GlobalMedia
+- RULE-SET,Proxy,Proxy
+- RULE-SET,China,Domestic
+- RULE-SET,ChinaCIDR,Domestic
+- RULE-SET,LAN,DIRECT
+- GEOIP,CN,Domestic
+- MATCH,Proxy
+rules+:
+- RULE-SET,AntiAd,Guard
+- RULE-SET,RejectDomainset,Guard
+- RULE-SET,RejectNonIp,Guard
+- RULE-SET,Apple,Apple
+- RULE-SET,Telegram,Telegram
+- RULE-SET,Spotify,Spotify
+- RULE-SET,TikTok,TikTok
+- RULE-SET,BiliBili,StreamingSE
+- RULE-SET,Netflix,Netflix
+- RULE-SET,Disney+,Disney+
+- RULE-SET,YouTube,YouTube
+- RULE-SET,ChinaMedia,Domestic
+- RULE-SET,GlobalMedia,GlobalMedia
+- RULE-SET,Game,Gamer
+- RULE-SET,AIGC,OpenAI
+- RULE-SET,Microsoft,Microsoft
+- RULE-SET,Proxy,Proxy
+- RULE-SET,China,Domestic
+- RULE-SET,ChinaCIDR,Domestic
+- RULE-SET,LAN,DIRECT
+- GEOIP,CN,Domestic
+- MATCH,Proxy
+[Overwrite]
+ruby_merge_hash "$CONFIG_FILE" "['rule-providers']" "'Disney+'=>{'type'=>'http','behavior'=>'classical','format'=>'yaml','interval'=>43200,'url'=>'https://raw.githubusercontent.com/Rabbit-Spec/Clash/Master/Rules/Disney.yaml','path'=>'./rule_provider/Disney+.yaml'}"
