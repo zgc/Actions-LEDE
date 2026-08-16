@@ -9,26 +9,28 @@ OPENCLASH_DNS_PORT=$(cat /etc/config/openclash | grep "option dns_port" | cut -d
 OPENCLASH_ENABLE=$(cat /etc/config/openclash | grep -m 1 "option enable" | cut -d: -f2 | awk '{ print $3}' | cut -d "'" -f 2)
 
 if [ "${OPENCLASH_ENABLE}" = "1" ]; then
-  while [ $tries -lt 5 ]; do
-    echo "$DATE check $GITHUB start" >>$LOG
-    NSLOOKUP=$(nslookup -port="${OPENCLASH_DNS_PORT}" "$GITHUB" 127.0.0.1 2>/dev/null | grep -c 'Name:')
-    if [ "${NSLOOKUP}" -ne 0 ]; then
-      echo "$DATE check openclash connect: OK" >>$LOG
-      exit 0
-    else
-      echo "$DATE check $YOUTUBE start" >>$LOG
-      NSLOOKUP=$(nslookup -port="${OPENCLASH_DNS_PORT}" "$YOUTUBE" 127.0.0.1 2>/dev/null | grep -c 'Name:')
-      if [ "${NSLOOKUP}" -ne 0 ]; then
-        echo "$DATE check openclash connect: OK" >>$LOG
-        exit 0
-      else
-        tries=$((tries + 1))
-        echo "$DATE tries: $tries, openclash restart" >>$LOG
-        /etc/init.d/openclash restart
-        sleep 10
-      fi
-    fi
-  done
+  FAIL_FILE=/tmp/check_openclash_fail_count
+  check_dns() {
+    nslookup -port="${OPENCLASH_DNS_PORT}" "$1" 127.0.0.1 2>/dev/null | grep -q 'Name:'
+  }
+
+  echo "$DATE check $GITHUB start" >>$LOG
+  if check_dns "$GITHUB" || check_dns "$YOUTUBE"; then
+    rm -f "$FAIL_FILE"
+    echo "$DATE check openclash connect: OK" >>$LOG
+    exit 0
+  fi
+
+  COUNT=$(cat "$FAIL_FILE" 2>/dev/null || echo 0)
+  COUNT=$((COUNT + 1))
+  echo "$COUNT" > "$FAIL_FILE"
+  if [ "$COUNT" -ge 3 ]; then
+    echo "$DATE 3 consecutive failures, openclash restart" >>$LOG
+    /etc/init.d/openclash restart
+    rm -f "$FAIL_FILE"
+  else
+    echo "$DATE check failed, skip restart ($COUNT/3)" >>$LOG
+  fi
 else
   echo "$DATE openclash disable, skip" >>$LOG
 fi
