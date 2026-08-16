@@ -729,7 +729,6 @@ config config_overwrite
 config authentication
 	option enabled '0'
 	option username 'Clash'
-	option password ''
 
 " >package/emortal/luci-app-openclash/root/etc/config/openclash
 
