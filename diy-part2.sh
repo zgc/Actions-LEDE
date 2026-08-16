@@ -726,6 +726,11 @@ config config_overwrite
 	option order '1'
 	list config 'all'
 
+config authentication
+	option enabled '0'
+	option username 'Clash'
+	option password ''
+
 " >package/emortal/luci-app-openclash/root/etc/config/openclash
 
 # OpenClash 0.47.x 不再消费 UCI rule_providers；Rabbit-Spec 规则集统一走覆写模块。
