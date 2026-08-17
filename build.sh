@@ -14,6 +14,10 @@
 
 GITHUB_WORKSPACE=$(cd "$(dirname "$0")" && pwd)
 cd "$GITHUB_WORKSPACE" || exit 1
+# 统一 Git HTTP 传输参数，避免 GnuTLS/TLS EOF 因某个克隆路径漏配而复现。
+export GIT_CONFIG_COUNT=1
+export GIT_CONFIG_KEY_0=http.version
+export GIT_CONFIG_VALUE_0=HTTP/1.1
 # Docker bind mount 由宿主用户持有；仅在下方可复现性检查中局部声明安全目录。
 # 固件必须可由已提交的源码树复现。设备仓库常含本地试验，直接从脏工作树构建将无法审计或复现。
 if [ "${ALLOW_DIRTY_BUILD:-0}" != "1" ] && [ -n "$(git -c safe.directory="$GITHUB_WORKSPACE" -C "$GITHUB_WORKSPACE" status --porcelain)" ]; then
