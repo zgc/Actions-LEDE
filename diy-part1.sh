@@ -45,7 +45,7 @@ cache_clone() {
         echo "❌ ${name}: failed to create sparse-clone temporary directory"
         exit 1
       }
-      if git clone --depth 1 -b "$branch" --filter=blob:none --sparse \
+      if git -c http.version=HTTP/1.1 clone --depth 1 -b "$branch" --filter=blob:none --sparse \
            "$url" --no-checkout "$tmpdir" && \
          (cd "$tmpdir" && git sparse-checkout init --cone \
            && git sparse-checkout set "$sparse" \
@@ -56,7 +56,7 @@ cache_clone() {
         break
       fi
       rm -rf "$tmpdir"
-    elif git clone --depth 1 -b "$branch" "$url" "$target"; then
+    elif git -c http.version=HTTP/1.1 clone --depth 1 -b "$branch" "$url" "$target"; then
       ok=true
       break
     fi
