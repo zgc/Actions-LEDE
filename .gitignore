@@ -1,5 +1,6 @@
 # OpenWrt source (cloned via git)
 /openwrt/
+/openwrt
 /openwrt.bak.*/
 
 # Download cache
