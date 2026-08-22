@@ -1,0 +1,158 @@
+#!/bin/sh
+# Re-apply stable USB NIC roles after USB re-enumeration.
+# Base ships only the generic mechanism; each USB device supplies local
+# topology through /etc/config/usb-eth-rename. The script is intentionally
+# inert when that config is absent, so PCIe-only devices need no cron entry.
+
+CONFIG=/etc/config/usb-eth-rename
+[ -f "$CONFIG" ] || exit 0
+
+LOCK=/tmp/usb-eth-rename.lock
+[ -d "$LOCK" ] && exit 0
+mkdir "$LOCK" 2>/dev/null || exit 0
+trap 'rmdir "$LOCK" 2>/dev/null' EXIT
+
+USB_CONTROLLER="$(uci -q get usb-eth-rename.@config[0].usb_controller)"
+MAPPINGS="$(uci -q get usb-eth-rename.@config[0].mappings)"
+VLAN_ID="$(uci -q get usb-eth-rename.@config[0].vlan_id)"
+BRIDGE="$(uci -q get usb-eth-rename.@config[0].bridge)"
+BRIDGE_VLANS="$(uci -q get usb-eth-rename.@config[0].bridge_vlans)"
+
+# All values are required; missing config means this device has no self-heal plan.
+if [ -z "$USB_CONTROLLER" ] || [ -z "$MAPPINGS" ] || [ -z "$VLAN_ID" ] || \
+   [ -z "$BRIDGE" ] || [ -z "$BRIDGE_VLANS" ]; then
+	logger -t usb-eth-rename "incomplete /etc/config/usb-eth-rename"
+	exit 0
+fi
+
+release_old_vlan_names() {
+	local mapping port target vlan current iface
+	set -- $MAPPINGS
+	while [ $# -ge 2 ]; do
+		port="$1"; target="$2"; shift 2
+		vlan="${target}.${VLAN_ID}"
+		for dev in /sys/class/net/*.${VLAN_ID}; do
+			[ -e "$dev" ] || continue
+			iface="${dev##*/}"
+			[ "$iface" = "$vlan" ] && continue
+			base="${iface%.${VLAN_ID}}"
+			case "$base" in *_tmp) continue ;; esac
+			pci_path="$(readlink -f "/sys/class/net/$iface/device" 2>/dev/null)" || continue
+			case "$pci_path" in
+				*/$USB_CONTROLLER/$port/*) ;;
+				*) continue ;;
+			esac
+			ip link set "$iface" down 2>/dev/null
+			if ip link set "$iface" name "${vlan}_tmp" 2>/dev/null; then
+				logger -t usb-eth-rename "$iface $USB_CONTROLLER/$port -> ${vlan}_tmp"
+			fi
+		done
+	done
+}
+
+assign_target_vlans() {
+	local vlan tmpname
+	for vlan in $BRIDGE_VLANS; do
+		if [ ! -e "/sys/class/net/$vlan" ]; then
+			base="${vlan%.${VLAN_ID}}"
+			if [ -e "/sys/class/net/$base" ]; then
+				ip link add link "$base" name "$vlan" type vlan id "$VLAN_ID" 2>/dev/null && logger -t usb-eth-rename "created $vlan on $base"
+			fi
+		fi
+		tmpname="${vlan}_tmp"
+		[ -e "/sys/class/net/$tmpname" ] || continue
+		if [ -e "/sys/class/net/$vlan" ]; then
+			logger -t usb-eth-rename "target vlan $vlan occupied; skipped"
+			continue
+		fi
+		ip link set "$tmpname" down 2>/dev/null
+		if ip link set "$tmpname" name "$vlan" 2>/dev/null; then
+			logger -t usb-eth-rename "$tmpname -> $vlan"
+			ip link set "$vlan" up 2>/dev/null
+		fi
+	done
+}
+
+fix_bridge_members() {
+	local slave
+	ip link set "$BRIDGE" up 2>/dev/null || true
+	for slave in $BRIDGE_VLANS; do
+		[ -e "/sys/class/net/$slave" ] || continue
+		# /sys/class/net/$slave/master is a symlink to the bridge directory;
+		# resolve it and compare only the leaf name.
+		[ "$(basename "$(readlink -f "/sys/class/net/$slave/master" 2>/dev/null)")" = "$BRIDGE" ] && continue
+		ip link set "$slave" master "$BRIDGE" 2>/dev/null && logger -t usb-eth-rename "$slave -> $BRIDGE"
+	done
+}
+
+release_old_names() {
+	local mapping port target current iface pci_path
+	set -- $MAPPINGS
+	while [ $# -ge 2 ]; do
+		port="$1"; target="$2"; shift 2
+		for dev in /sys/class/net/eth*; do
+			[ -e "$dev" ] || continue
+			iface="${dev##*/}"
+			case "$iface" in *_tmp|*.*) continue ;; esac
+			current="$iface"
+			pci_path="$(readlink -f "/sys/class/net/$iface/device" 2>/dev/null)" || continue
+			case "$pci_path" in
+				*/$USB_CONTROLLER/$port/*) ;;
+				*) continue ;;
+			esac
+			[ "$current" = "$target" ] && continue
+			ip link set "$current" down 2>/dev/null
+			if ip link set "$current" name "${target}_tmp" 2>/dev/null; then
+				logger -t usb-eth-rename "$current $USB_CONTROLLER/$port -> ${target}_tmp"
+			else
+				ip link set "$current" up 2>/dev/null
+			fi
+		done
+	done
+}
+
+assign_targets() {
+	local mapping port target tmpname
+	set -- $MAPPINGS
+	while [ $# -ge 2 ]; do
+		port="$1"; target="$2"; shift 2
+		tmpname="${target}_tmp"
+		[ -e "/sys/class/net/$tmpname" ] || continue
+		if [ -e "/sys/class/net/$target" ]; then
+			logger -t usb-eth-rename "target $target occupied; skipped"
+			continue
+		fi
+		ip link set "$tmpname" down 2>/dev/null
+		if ip link set "$tmpname" name "$target" 2>/dev/null; then
+			logger -t usb-eth-rename "$tmpname -> $target"
+			ip link set "$target" up 2>/dev/null
+		else
+			ip link set "$tmpname" up 2>/dev/null
+		fi
+	done
+}
+
+set --
+# Cron mode: ACTION is empty. Hotplug mode: only act for USB port adds.
+if [ -n "$ACTION" ] && [ "$ACTION" != add ]; then
+	exit 0
+fi
+if [ -n "$ACTION" ] && [ "$ACTION" = add ]; then
+	# hotplug.d cannot fire for ordinary net adds on this image, so this is
+	# only a low-cost opportunistic path; cron remains the reliable mechanism.
+	case "${INTERFACE:-$DEVICENAME}" in
+		eth[0-9]*) ;;
+		*) exit 0 ;;
+	esac
+fi
+
+# Delay only for hotplug; cron needs immediate idempotent check.
+[ -n "$ACTION" ] && sleep 2
+
+release_old_vlan_names
+release_old_names
+assign_targets
+assign_target_vlans
+fix_bridge_members
+
+exit 0

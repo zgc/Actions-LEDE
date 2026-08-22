@@ -83,6 +83,10 @@ deploy_base_rootfs_tools() {
 	mkdir -p package/base-files/files/etc/hotplug.d/iface
 	cp "$GITHUB_WORKSPACE/scripts/zerotier-wan-hotplug" package/base-files/files/etc/hotplug.d/iface/95-zerotier-wan
 	chmod +x package/base-files/files/etc/hotplug.d/iface/95-zerotier-wan
+
+	# 通用 USB 网卡拓扑自愈；只有设备 overlay 提供 /etc/config/usb-eth-rename 时才生效
+	cp "$GITHUB_WORKSPACE/scripts/50-usb-eth-rename" package/base-files/files/etc/50-usb-eth-rename
+	chmod +x package/base-files/files/etc/50-usb-eth-rename
 }
 
 configure_firstboot_defaults() {
