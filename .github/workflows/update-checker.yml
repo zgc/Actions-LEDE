@@ -26,7 +26,7 @@ concurrency:
 
 permissions:
   actions: write
-  contents: read
+  contents: write
 
 jobs:
   check:
@@ -67,7 +67,7 @@ jobs:
       if: steps.cacheHash.outputs.cache-hit != 'true'
       uses: peter-evans/repository-dispatch@v1
       with:
-        token: ${{ secrets.SEC_TOKEN }}
+        token: ${{ secrets.SEC_TOKEN || github.token }}
         event-type: source-code-update
 
     - name: Delete workflow runs
