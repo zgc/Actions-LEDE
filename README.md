@@ -65,6 +65,7 @@ docker compose run --rm \
 构建产物位于 `release/`：
 
 - `<设备名>.img.gz`：刷写镜像。
+ - `<设备名>.bin`（或 `.bin.gz`）：NAND 设备（如 MT7621 HiWiFi HC5962）的 sysupgrade/factory 镜像。
 - `<设备名>.manifest`：实际写入镜像的软件包清单。
 - `config.buildinfo` 和 `<设备名>.target.config.buildinfo`：展开后的构建配置。
 - `.md5`：压缩镜像和解压后镜像的校验值。

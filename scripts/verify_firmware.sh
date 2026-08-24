@@ -5,6 +5,8 @@ set -euo pipefail
 OPENWRT_DIR=${1:?usage: verify_firmware.sh <openwrt-dir> <release-dir> <release-name>}
 RELEASE_DIR=${2:?usage: verify_firmware.sh <openwrt-dir> <release-dir> <release-name>}
 RELEASE_NAME=${3:?usage: verify_firmware.sh <openwrt-dir> <release-dir> <release-name>}
+FIRMWARE_EXT=${FIRMWARE_EXT:-img.gz}
+FIRMWARE="$RELEASE_DIR/$RELEASE_NAME.$FIRMWARE_EXT"
 
 fail() {
 	echo "❌ $*" >&2
@@ -47,14 +49,19 @@ verify_manifest() {
 }
 
 verify_squashfs() {
-	local image="$RELEASE_DIR/$RELEASE_NAME.img.gz" verify_dir image_raw image_rootfs squashfs_offset luci_asset
+	local image="$FIRMWARE" verify_dir image_raw image_rootfs squashfs_offset luci_asset
+    verify_dir=$(mktemp -d) || fail "failed to create image verification directory"
+    CLEANUP_DIRS+=("$verify_dir")
 
-	gzip -t "$image" || fail "firmware gzip integrity check failed"
-	verify_dir=$(mktemp -d) || fail "failed to create image verification directory"
-	CLEANUP_DIRS+=("$verify_dir")
-	image_raw="$verify_dir/$RELEASE_NAME.img"
+	if [ "$FIRMWARE_EXT" = "img.gz" ]; then
+		gzip -t "$image" || fail "firmware gzip integrity check failed"
+		image_raw="$verify_dir/$RELEASE_NAME.img"
+		gzip -dc "$image" > "$image_raw" || fail "failed to decompress firmware image for SquashFS verification"
+	else
+		image_raw="$verify_dir/$RELEASE_NAME.$FIRMWARE_EXT"
+		cp -f "$image" "$image_raw" || fail "failed to copy firmware image for SquashFS verification"
+	fi
 	image_rootfs="$verify_dir/rootfs"
-	gzip -dc "$image" > "$image_raw" || fail "failed to decompress firmware image for SquashFS verification"
 	squashfs_offset=$(LC_ALL=C grep -abo -m 1 'hsqs' "$image_raw" | cut -d: -f1 || true)
 	[ -n "$squashfs_offset" ] || fail "unable to locate SquashFS in firmware image"
 	echo "🔍 Fully extracting SquashFS at offset $squashfs_offset"
@@ -67,7 +74,7 @@ verify_squashfs() {
 
 [ -d "$OPENWRT_DIR" ] || fail "OpenWrt directory is missing: $OPENWRT_DIR"
 [ -s "$RELEASE_DIR/$RELEASE_NAME.manifest" ] || fail "release manifest is missing"
-[ -s "$RELEASE_DIR/$RELEASE_NAME.img.gz" ] || fail "release image is missing"
+[ -s "$FIRMWARE" ] || fail "release image is missing"
 
 verify_manifest
 verify_squashfs
@@ -76,8 +83,10 @@ verify_squashfs
 	cd "$RELEASE_DIR"
 	checksum_tmp=$(mktemp ".${RELEASE_NAME}.md5.XXXXXX")
 	trap 'rm -f "$checksum_tmp"' EXIT
-	md5sum "$RELEASE_NAME.img.gz" > "$checksum_tmp"
-	mv -f "$checksum_tmp" "$RELEASE_NAME.img.gz.md5"
-	gzip -dc "$RELEASE_NAME.img.gz" | md5sum | sed "s/-/$RELEASE_NAME.img/" > "$checksum_tmp"
-	mv -f "$checksum_tmp" "$RELEASE_NAME.img.md5"
+	md5sum "$RELEASE_NAME.$FIRMWARE_EXT" > "$checksum_tmp"
+	mv -f "$checksum_tmp" "$RELEASE_NAME.$FIRMWARE_EXT.md5"
+	if [ "$FIRMWARE_EXT" = "img.gz" ]; then
+		gzip -dc "$RELEASE_NAME.$FIRMWARE_EXT" | md5sum | sed "s/-/$RELEASE_NAME.img/" > "$checksum_tmp"
+		mv -f "$checksum_tmp" "$RELEASE_NAME.img.md5"
+	fi
 )

@@ -356,10 +356,22 @@ if [ -d "$FIRMWARE_DIR" ]; then
     echo "⚠️ Target config.buildinfo is unavailable; using the expanded build config"
   fi
   cp -f "$target_config" "$RELEASE_DIR/${RELEASE_NAME}.target.config.buildinfo" || { echo "❌ failed to save target config.buildinfo"; exit 1; }
-  # 优先查找 combined/EFI 固件镜像，其次才接受任意 .img.gz。
+  # 优先 combined/EFI .img.gz；非 x86 设备允许 sysupgrade.bin/factory.bin。
   mapfile -t firmware_files < <(find "$FIRMWARE_DIR" -maxdepth 1 -name "*combined*img.gz" -type f 2>/dev/null)
   if [ "${#firmware_files[@]}" -eq 0 ]; then
     mapfile -t firmware_files < <(find "$FIRMWARE_DIR" -maxdepth 1 -name "*img.gz" -type f 2>/dev/null)
+  fi
+  if [ "${#firmware_files[@]}" -eq 0 ]; then
+    mapfile -t firmware_files < <(find "$FIRMWARE_DIR" -maxdepth 1 -name "*sysupgrade.bin" -type f 2>/dev/null)
+  fi
+  if [ "${#firmware_files[@]}" -eq 0 ]; then
+    mapfile -t firmware_files < <(find "$FIRMWARE_DIR" -maxdepth 1 -name "*sysupgrade.bin.gz" -type f 2>/dev/null)
+  fi
+  if [ "${#firmware_files[@]}" -eq 0 ]; then
+    mapfile -t firmware_files < <(find "$FIRMWARE_DIR" -maxdepth 1 -name "*factory.bin" -type f 2>/dev/null)
+  fi
+  if [ "${#firmware_files[@]}" -eq 0 ]; then
+    mapfile -t firmware_files < <(find "$FIRMWARE_DIR" -maxdepth 1 -name "*factory.bin.gz" -type f 2>/dev/null)
   fi
   if [ "${#firmware_files[@]}" -ne 1 ]; then
     echo "❌ expected exactly one firmware image, found ${#firmware_files[@]}"
@@ -367,11 +379,17 @@ if [ -d "$FIRMWARE_DIR" ]; then
     exit 1
   fi
   FIRMWARE_FILE="${firmware_files[0]}"
+  FIRMWARE_EXT=img.gz
+  case "$FIRMWARE_FILE" in
+    *.bin.gz) FIRMWARE_EXT=bin.gz ;;
+    *.bin) FIRMWARE_EXT=bin ;;
+  esac
+  export FIRMWARE_EXT
   if [ -f "$FIRMWARE_FILE" ]; then
-    cp -f "$FIRMWARE_FILE" "$RELEASE_DIR/$RELEASE_NAME.img.gz" || { echo "❌ failed to copy firmware image"; exit 1; }
+    cp -f "$FIRMWARE_FILE" "$RELEASE_DIR/$RELEASE_NAME.$FIRMWARE_EXT" || { echo "❌ failed to copy firmware image"; exit 1; }
     echo "✅ Firmware: $(basename "$FIRMWARE_FILE")"
   else
-    echo "❌ No .img.gz found in $FIRMWARE_DIR!"
+    echo "❌ No supported firmware found in $FIRMWARE_DIR!"
     exit 1
   fi
   mapfile -t manifests < <(find "$FIRMWARE_DIR" -maxdepth 1 -name "*.manifest" -type f 2>/dev/null)
@@ -394,4 +412,4 @@ else
 fi
 
 "$GITHUB_WORKSPACE/scripts/verify_firmware.sh" openwrt "$RELEASE_DIR" "$RELEASE_NAME"
-ls -lh "$RELEASE_DIR/${RELEASE_NAME}.img.gz"
+ls -lh "$RELEASE_DIR/${RELEASE_NAME}.${FIRMWARE_EXT}"
