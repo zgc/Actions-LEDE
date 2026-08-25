@@ -385,6 +385,9 @@ if [ -d "$FIRMWARE_DIR" ]; then
     *.bin) FIRMWARE_EXT=bin ;;
   esac
   export FIRMWARE_EXT
+  if [ -n "${GITHUB_ENV:-}" ]; then
+    echo "FIRMWARE_EXT=$FIRMWARE_EXT" >> "$GITHUB_ENV"
+  fi
   if [ -f "$FIRMWARE_FILE" ]; then
     cp -f "$FIRMWARE_FILE" "$RELEASE_DIR/$RELEASE_NAME.$FIRMWARE_EXT" || { echo "❌ failed to copy firmware image"; exit 1; }
     echo "✅ Firmware: $(basename "$FIRMWARE_FILE")"

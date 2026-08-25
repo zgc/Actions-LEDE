@@ -241,16 +241,19 @@ jobs:
       run: |
         set -euo pipefail
         release_dir="$GITHUB_WORKSPACE/release"
+        : "${FIRMWARE_EXT:=img.gz}"
         for file in \
           config.buildinfo \
           "${DEVICE_NAME}.target.config.buildinfo" \
           "${DEVICE_NAME}.manifest" \
-          "${DEVICE_NAME}.img.gz" \
-          "${DEVICE_NAME}.img.gz.md5" \
-          "${DEVICE_NAME}.img.md5"; do
+          "${DEVICE_NAME}.${FIRMWARE_EXT}" \
+          "${DEVICE_NAME}.${FIRMWARE_EXT}.md5"; do
           test -s "$release_dir/$file" || { echo "::error::canonical build output is missing: $file"; exit 1; }
         done
-        gzip -t "$release_dir/${DEVICE_NAME}.img.gz"
+        if [ "${FIRMWARE_EXT}" = "img.gz" ]; then
+          test -s "$release_dir/${DEVICE_NAME}.img.md5" || { echo "::error::canonical build output is missing: ${DEVICE_NAME}.img.md5"; exit 1; }
+          gzip -t "$release_dir/${DEVICE_NAME}.img.gz"
+        fi
         echo "FIRMWARE=$GITHUB_WORKSPACE/release" >> $GITHUB_ENV
         echo "status=success" >> $GITHUB_OUTPUT
 
