@@ -28,6 +28,12 @@ IMG_GZ_MD5="$RELEASE_NAME.img.gz.md5"
 IMG_MD5="$RELEASE_NAME.img.md5"
 REMOTE_SCRIPT="$ROOT/scripts/reset_offline.sh"
 
+if [ ! -f "$RELEASE_DIR/$IMG_GZ" ]; then
+	echo "❌ $IMG_GZ not found; device may use NAND/sysupgrade format"
+	echo "   B70 等设备请使用 LuCI sysupgrade，禁止整盘 raw 刷写"
+	exit 1
+fi
+
 echo "== local checks =="
 for f in "$IMG_GZ" "$IMG_GZ_MD5" "$IMG_MD5"; do
 	[ -s "$RELEASE_DIR/$f" ] || { echo "❌ missing $f"; exit 1; }

@@ -1,5 +1,11 @@
 # 远程刷机安全规程与事故记录
 
+## 适用范围（所有设备统一执行）
+
+- 整盘镜像刷写设备：NUC8（nvme0n1）、ZBOX（sda）、X35G（sda）、MEMINI（mmcblk0）。
+- B70 为 NAND/sysupgrade 设备：只能走 LuCI sysupgrade，禁止 raw dd 整盘刷写。
+- 所有设备在写盘、读回校验、重启完成前，一律禁止中断 SSH 或终止远端进程。
+
 ## 事故记录（2026-08-26，X35G）
 
 现象：远程执行 `timeout 300 ssh ... 'sh /tmp/reset_offline.sh 2>&1 | tail'`，

@@ -7,6 +7,10 @@ set +u
 [ -f /etc/openwrt-device.conf ] && . /etc/openwrt-device.conf
 set -u
 
+# 远程执行时即使 SSH 断开收到 HUP，也不能中断写盘/读回校验。
+# 子进程在 exec 时会继承被忽略的 SIGHUP，这是全设备通用的防护。
+trap '' HUP
+
 IMG_DIR=${IMG_DIR:-/tmp}
 DISK=${DISK:-sda}
 RELEASE_NAME=${RELEASE_NAME:-$(uname -m)}
