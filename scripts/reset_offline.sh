@@ -7,9 +7,17 @@ set +u
 [ -f /etc/openwrt-device.conf ] && . /etc/openwrt-device.conf
 set -u
 
-# 远程执行时即使 SSH 断开收到 HUP，也不能中断写盘/读回校验。
-# 子进程在 exec 时会继承被忽略的 SIGHUP，这是全设备通用的防护。
-trap '' HUP
+# 远程执行时即使 SSH 断开收到 HUP/PIPE，也不能中断写盘/读回校验。
+# 子进程在 exec 时会继承被忽略的信号，这是全设备通用的防护。
+trap '' HUP PIPE
+
+# 硬约束：刷写脚本禁止通过管道执行。sh reset_offline.sh 2>&1 | tail 这种
+# 用法在 SSHD/远端进程被中断时会把 dd 一起打断，历史上已导致设备无法引导。
+if [ -p /dev/stdout ] || [ -p /dev/stderr ]; then
+	echo "❌ 禁止通过管道执行 reset_offline.sh" >&2
+	echo "   正确用法: nohup sh /tmp/reset_offline.sh > /tmp/flash.log 2>&1 &" >&2
+	exit 1
+fi
 
 IMG_DIR=${IMG_DIR:-/tmp}
 DISK=${DISK:-sda}

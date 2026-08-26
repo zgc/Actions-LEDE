@@ -30,6 +30,16 @@ X35G 的 USB 启动介质写盘未在 300 秒内完成，本地 `timeout` 杀掉
 5. 重启后核对 head -3 /etc/openwrt_release、关键软件包、接口状态和 uptime。
 6. 无人值守设备没有远程电源控制时不执行整盘刷写；若必须执行，先确认有断电恢复方案。
 
+## 硬约束（在脚本内，不依赖查文档）
+
+reset_offline.sh 自身会：
+
+- 忽略 HUP 和 PIPE 信号，SSH/远端进程被中断时不会打断写盘和读回校验；
+- 拒绝通过管道执行（stdout/stderr 是管道时直接退出），
+  因此 sh reset_offline.sh 2>&1 | tail 这类命令无法再启动写盘。
+
+正确入口只有：nohup sh /tmp/reset_offline.sh > /tmp/flash.log 2>&1 &
+
 ## 禁止清单
 
 - 禁止对刷写 SSH 会话使用会杀客户的本地 timeout，尤其是在慢介质上。
