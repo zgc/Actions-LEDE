@@ -37,8 +37,14 @@ X35G 的 USB 启动介质写盘未在 300 秒内完成，本地 `timeout` 杀掉
 - 禁止跳过实机 MD5 校验或多重确认目标盘。
 - 禁止把失败后的无人值守设备重复盲刷。
 
-## 推荐命令
+## 标准执行方式
 
-在设备仓库根目录执行：./scripts/remote_flash.sh 192.168.x.1
+不再增加任何封装脚本。唯一执行入口是设备上已有的 reset_offline.sh；
+远程侧只做上传、nohup 启动、轮询日志三件事：
 
-该脚本会自动上传、远端 nohup 启动、轮询日志并在重启后给出核对信息。
+上传 RELEASE_NAME.img.gz、两个 md5 和 reset_offline.sh 到 /tmp 后：
+
+ssh root@IP 'rm -f /tmp/flash.log; nohup sh /tmp/reset_offline.sh > /tmp/flash.log 2>&1 & echo $!'
+
+之后轮询 /tmp/flash.log，直到出现“写入成功，重启”，再等待设备上线核对版本。
+不要为此创建新的远程脚本或复用命令，避免新增风险点。
