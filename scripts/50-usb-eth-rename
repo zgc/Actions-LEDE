@@ -17,6 +17,7 @@ MAPPINGS="$(uci -q get usb-eth-rename.@config[0].mappings)"
 VLAN_ID="$(uci -q get usb-eth-rename.@config[0].vlan_id)"
 BRIDGE="$(uci -q get usb-eth-rename.@config[0].bridge)"
 BRIDGE_VLANS="$(uci -q get usb-eth-rename.@config[0].bridge_vlans)"
+MAC_FALLBACKS="$(uci -q get usb-eth-rename.@config[0].mac_fallbacks)"
 
 # All values are required; missing config means this device has no self-heal plan.
 if [ -z "$USB_CONTROLLER" ] || [ -z "$MAPPINGS" ] || [ -z "$VLAN_ID" ] || \
@@ -131,6 +132,32 @@ assign_targets() {
 		fi
 	done
 }
+assign_mac_targets() {
+	local mapping map_mac target iface addr tmpname
+	[ -n "$MAC_FALLBACKS" ] || return 0
+	set -- $MAC_FALLBACKS
+	while [ $# -ge 2 ]; do
+		map_mac="$1"; target="$2"; shift 2
+		tmpname="${target}_tmp"
+		[ -e "/sys/class/net/$tmpname" ] && continue
+		for dev in /sys/class/net/eth*; do
+			[ -e "$dev" ] || continue
+			iface="${dev##*/}"
+			case "$iface" in
+				*_tmp|*.*) continue ;;
+				$target) continue ;;
+			esac
+			addr="$(cat "/sys/class/net/$iface/address" 2>/dev/null)"
+			[ "$addr" = "$map_mac" ] || continue
+			ip link set "$iface" down 2>/dev/null
+			if ip link set "$iface" name "$target" 2>/dev/null; then
+				logger -t usb-eth-rename "MAC fallback: $iface ($addr) -> $target"
+			fi
+			ip link set "$target" up 2>/dev/null
+			break
+		done
+	done
+}
 
 set --
 # Cron mode: ACTION is empty. Hotplug mode: only act for USB port adds.
@@ -152,6 +179,7 @@ fi
 release_old_vlan_names
 release_old_names
 assign_targets
+assign_mac_targets
 assign_target_vlans
 fix_bridge_members
 
