@@ -116,6 +116,12 @@ configure_application_defaults() {
 	sed -i "s|option command '.*'|option command '/bin/login -f root'|" feeds/packages/utils/ttyd/files/ttyd.config
 	local ttyd_init=feeds/packages/utils/ttyd/files/ttyd.init
 	[ -f "$ttyd_init" ] && sed -i 's|\${interface:+-i \$interface} ||' "$ttyd_init"
+
+	# /var 指向 tmpfs，vnstat 数据库必须改到持久化目录，否则重启即丢失。
+	local vnstat_init=feeds/packages/net/vnstat2/files/vnstat.init
+	if [ -f "$vnstat_init" ]; then
+		perl -0pi -e "s{^\t/usr/sbin/vnstatd --initdb >/dev/null}{\tmkdir -p /etc/vnstat\n\tsed -i 's|^[#;]*[[:space:]]*DatabaseDir.*|DatabaseDir \"/etc/vnstat\"|' /etc/vnstat.conf\n\t/usr/sbin/vnstatd --initdb >/dev/null}m" "$vnstat_init"
+	fi
 }
 
 zerotier_source_supports_feed_patches() {
