@@ -11,7 +11,7 @@ name: Merge-upstream
 on:
   workflow_dispatch:
   schedule:
-    - cron: '0 */8 * * *'
+    - cron: '0 3 * * 1'
 
 env:
   UPSTREAM_REPO: https://github.com/P3TERX/Actions-OpenWrt
