@@ -6,6 +6,26 @@
 - B70 为 NAND/sysupgrade 设备：只能走 LuCI sysupgrade，禁止 raw dd 整盘刷写。
 - 所有设备在写盘、读回校验、重启完成前，一律禁止中断 SSH 或终止远端进程。
 
+## 同步状态核查（先 fetch，再判断）
+
+设备仓库同步 base 的方式是 rebase：`.github/workflows/merge_upstream.yml` 执行
+`git rebase upstream/main` 后以 `push --force-with-lease` 覆盖远端。rebase 会重写 commit SHA，
+远端历史每次同步都会“换血”，因此没有及时 fetch 的克隆会把同一批改动显示成 ahead/behind
+和内容差异（2026-09-15 B70 就是因为本地远端引用过期被误判为分叉）。
+
+判断同步状态前必须先刷新远端引用：
+
+```bash
+cd /home/zgc/coding/<设备仓库>
+git fetch --all --prune                 # 出现 (forced update) 属正常，是 rebase 同步的结果
+git status -sb                          # 期望 ## main...origin/main，无 ahead/behind
+git rev-list --count HEAD..base/main    # 期望 0，表示没有落后 base
+git log --oneline base/main..HEAD       # 这里只应出现设备专属提交
+```
+
+- 只有 fetch 之后仍然 ahead/behind，才是真的分叉，才需要人工处理。
+- 不要拿过期引用直接做 `git diff HEAD origin/main`，得到的“内容差异”不可信。
+
 ## 事故记录（2026-08-26，X35G）
 
 现象：远程执行 `timeout 300 ssh ... 'sh /tmp/reset_offline.sh 2>&1 | tail'`，
