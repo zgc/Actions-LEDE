@@ -89,6 +89,19 @@ deploy_base_rootfs_tools() {
 	chmod +x package/base-files/files/etc/50-usb-eth-rename
 }
 
+# 上游 smartdns 的 updatefiles 每天由 crond 拉起，而它的 disable/enable_auto_update
+# 会调用 restart_crond() -> /etc/init.d/cron restart。restart 的 stop 阶段按进程树
+# 杀掉 crond，连带杀掉正在执行 updatefiles 的这条任务本身：smartdns 停在 stopped，
+# crond 也再没有人启动。2026-10-28/29 四台 05:00 同时断档就是这个链条。
+# 改成 crontab 重载（SIGHUP），不动 crond 进程。
+patch_upstream_service_bugs() {
+	local f=package/emortal/smartdns/package/openwrt/files/etc/init.d/smartdns
+	if [ -f "$f" ] && grep -q '^	/etc/init.d/cron restart >/dev/null 2>&1' "$f"; then
+		sed -i 's|^	/etc/init.d/cron restart >/dev/null 2>&1|	crontab /etc/crontabs/root 2>/dev/null|' "$f"
+		echo "✅ patched smartdns restart_crond (no crond suicide)"
+	fi
+}
+
 configure_firstboot_defaults() {
 	local defaults=package/emortal/default-settings/files/99-default-settings
 
@@ -257,6 +270,7 @@ validate_device_overlay || exit 1
 [ -f files/etc/smartdns/ui/smartdns.db ] && chmod 600 files/etc/smartdns/ui/smartdns.db
 configure_dropbear
 deploy_base_rootfs_tools
+patch_upstream_service_bugs
 configure_firstboot_defaults
 configure_application_defaults
 configure_zerotier || exit 1
