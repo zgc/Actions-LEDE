@@ -138,9 +138,22 @@ configure_application_defaults() {
 }
 
 configure_ntp_defaults() {
-	# NTP：系统只保留一个校时源。mihomo 的内置 NTP 已在设备仓库的
-	# files/etc/openclash/config.yaml 里关闭（避免 write-to-system 双写）。
-	# 这里把首选改成阿里云，腾讯作为备用。
+	# NTP：系统只保留一个校时源。
+	# 1) OpenClash 的 yml_change.sh 每次启动都会强制 ntp.enable=true，
+	#    必须先让它关掉，否则改 config.yaml 会被覆盖。
+	# 2) 系统默认时间源改成阿里云首选、腾讯备用。
+	local oc_yml=package/emortal/luci-app-openclash/root/usr/share/openclash/yml_change.sh
+	if [ -f "$oc_yml" ] && command -v python3 >/dev/null 2>&1; then
+		python3 - "$oc_yml" <<-'PY'
+			import sys
+			p = sys.argv[1]
+			s = open(p, encoding="utf-8").read()
+			s = s.replace("(Value['ntp'] ||= {})['enable'] = true", "(Value['ntp'] ||= {})['enable'] = false")
+			s = s.replace("Value['ntp']['server'] = 'time.apple.com' if !Value['ntp'].key?('server')", "Value['ntp']['server'] = 'ntp.aliyun.com'")
+			open(p, "w", encoding="utf-8").write(s)
+		PY
+	fi
+
 	local f=package/emortal/default-settings/files/99-default-settings-chinese
 	[ -f "$f" ] || return 0
 	awk '
