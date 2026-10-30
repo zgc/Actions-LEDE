@@ -817,6 +817,8 @@ config smartdns
 	option force_https_soa '0'
 	option seconddns_force_aaaa_soa '1'
 	option enable_auto_update '1'
+	option auto_update_day_time '2'
+	option log_level 'warn'
 	option mdns_lookup '1'
 	option proxy_server 'socks5://127.0.0.1:7893'
 	list conf_files 'anti-ad.conf'
