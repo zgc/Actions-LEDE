@@ -133,8 +133,24 @@ configure_application_defaults() {
 	# /var 指向 tmpfs，vnstat 数据库必须改到持久化目录，否则重启即丢失。
 	local vnstat_init=feeds/packages/net/vnstat2/files/vnstat.init
 	if [ -f "$vnstat_init" ]; then
-		perl -0pi -e "s{^\t/usr/sbin/vnstatd --initdb >/dev/null}{\tmkdir -p /etc/vnstat\n\tsed -i 's|^[#;]*[[:space:]]*DatabaseDir.*|DatabaseDir \"/etc/vnstat\"|' /etc/vnstat.conf\n\t/usr/sbin/vnstatd --initdb >/dev/null}m" "$vnstat_init"
+	perl -0pi -e "s{^\t/usr/sbin/vnstatd --initdb >/dev/null}{\tmkdir -p /etc/vnstat\n\tsed -i 's|^[#;]*[[:space:]]*DatabaseDir.*|DatabaseDir \"/etc/vnstat\"|' /etc/vnstat.conf\n\t/usr/sbin/vnstatd --initdb >/dev/null}m" "$vnstat_init"
 	fi
+}
+
+configure_ntp_defaults() {
+	# NTP：系统只保留一个校时源。mihomo 的内置 NTP 已在设备仓库的
+	# files/etc/openclash/config.yaml 里关闭（避免 write-to-system 双写）。
+	# 这里把首选改成阿里云，腾讯作为备用。
+	local f=package/emortal/default-settings/files/99-default-settings-chinese
+	[ -f "$f" ] || return 0
+	awk '
+		/add_list system\.ntp\.server=/ { next }
+		/set system\.@imm_init\[0\]\.system_chn="1"/ {
+			print "\t\tadd_list system.ntp.server=\"ntp.aliyun.com\""
+			print "\t\tadd_list system.ntp.server=\"ntp.tencent.com\""
+		}
+		{ print }
+	' "$f" > "$f.tmp" && mv "$f.tmp" "$f"
 }
 
 zerotier_source_supports_feed_patches() {
@@ -273,6 +289,7 @@ deploy_base_rootfs_tools
 patch_upstream_service_bugs
 configure_firstboot_defaults
 configure_application_defaults
+configure_ntp_defaults
 configure_zerotier || exit 1
 configure_custom_packages || exit 1
 
