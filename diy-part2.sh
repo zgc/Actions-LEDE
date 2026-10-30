@@ -956,8 +956,6 @@ config server
 	option enabled '1'
 
 config domain-rule
-	option no_speed_check '0'
-	option force_aaaa_soa '0'
 
 config download-file
 	option type 'config'
