@@ -23,6 +23,11 @@ if [ -f "$GITHUB_WORKSPACE/patches/firewall4/001-firewall4-add-support-for-fullc
        "$GITHUB_WORKSPACE/openwrt/package/network/config/firewall4/patches/001-firewall4-add-support-for-fullcone-nat.patch"
 fi
 
+# Logitech USB/Bolt receivers need HID++ support; the generic HID driver alone
+# multiplexes the devices but does not expose them as a usable keyboard/mouse.
+cp "$GITHUB_WORKSPACE/scripts/build/hid-logitech.mk" \
+	package/kernel/linux/modules/hid-logitech.mk
+
 # =============================================================================
 # 源码获取辅助函数
 # cache_clone：从 GitHub 克隆；仅在明确启用时回退至本地缓存。
