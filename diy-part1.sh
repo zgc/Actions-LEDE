@@ -217,6 +217,11 @@ except (OSError, ValueError, TypeError):
 fi
 rm -f "$_sm_release_tmp"
 IFS=$'\t' read -r SM_TAG SM_VERSION SM_UI_FILE SM_UI_URL <<< "$_release"
+if [ -n "${GITHUB_PROXY:-}" ]; then
+	case "$SM_UI_URL" in
+		https://github.com/*) SM_UI_URL="${GITHUB_PROXY}${SM_UI_URL}" ;;
+	esac
+fi
 echo "✅ smartdns: latest compatible release $SM_VERSION (tag: $SM_TAG)"
 
 # 4a. 下载已验证的预编译 SmartDNS UI 资源（.so 与 wwwroot）。
