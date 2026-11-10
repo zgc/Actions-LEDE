@@ -20,6 +20,12 @@ CLASH_META_REPOS_VERNESONG=${CLASH_META_REPOS_VERNESONG:-true}
 download_file() {
 	local url="$1" destination="$2" temporary
 
+	if [ -n "${GITHUB_PROXY:-}" ]; then
+		case "$url" in
+			https://github.com/*) url="${GITHUB_PROXY}${url}" ;;
+		esac
+	fi
+
 	temporary=$(mktemp "${destination}.tmp.XXXXXX") || return 1
 	if curl --fail --show-error --location --retry 5 --retry-all-errors --retry-delay 2 \
 		--connect-timeout 20 --output "$temporary" "$url" && [ -s "$temporary" ]; then

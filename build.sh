@@ -18,6 +18,12 @@ cd "$GITHUB_WORKSPACE" || exit 1
 export GIT_CONFIG_COUNT=1
 export GIT_CONFIG_KEY_0=http.version
 export GIT_CONFIG_VALUE_0=HTTP/1.1
+# 可选：GitHub 直连不稳定时，用镜像前缀重写所有 github.com 克隆。
+if [ -n "${GITHUB_PROXY:-}" ]; then
+	export GIT_CONFIG_COUNT=2
+	export GIT_CONFIG_KEY_1="url.${GITHUB_PROXY}https://github.com.insteadOf"
+	export GIT_CONFIG_VALUE_1="https://github.com"
+fi
 # Docker bind mount 由宿主用户持有；仅在下方可复现性检查中局部声明安全目录。
 # 固件必须可由已提交的源码树复现。设备仓库常含本地试验，直接从脏工作树构建将无法审计或复现。
 if [ "${ALLOW_DIRTY_BUILD:-0}" != "1" ] && [ -n "$(git -c safe.directory="$GITHUB_WORKSPACE" -C "$GITHUB_WORKSPACE" status --porcelain)" ]; then
