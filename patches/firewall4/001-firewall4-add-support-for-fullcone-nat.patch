@@ -1,0 +1,198 @@
+diff -ruN a/root/etc/config/firewall mod/root/etc/config/firewall
+--- a/root/etc/config/firewall	2026-10-26 16:37:23.000000000 +0800
++++ b/root/etc/config/firewall	2026-10-26 23:05:05.539241706 +0800
+@@ -5,6 +5,10 @@
+ 	option forward		REJECT
+ # Uncomment this line to disable ipv6 rules
+ #	option disable_ipv6	1
++	option flow_offloading	1
++	option flow_offloading_hw	1
++	option fullcone		1
++	option fullcone6	0
+ 
+ config zone
+ 	option name		lan
+diff -ruN a/root/usr/share/firewall4/templates/ruleset.uc mod/root/usr/share/firewall4/templates/ruleset.uc
+--- a/root/usr/share/firewall4/templates/ruleset.uc	2026-10-26 16:37:23.000000000 +0800
++++ b/root/usr/share/firewall4/templates/ruleset.uc	2026-10-26 23:05:05.539317012 +0800
+@@ -330,6 +330,12 @@
+ {%   for (let redirect in fw4.redirects(`dstnat_${zone.name}`)): %}
+ 		{%+ include("redirect.uc", { fw4, zone, redirect }) %}
+ {%   endfor %}
++{%   if (zone.masq && fw4.default_option("fullcone")): %}
++		{%+ include("zone-fullcone.uc", { fw4, zone, family: 4, direction: "dstnat" }) %}
++{%   endif %}
++{%   if (zone.masq6 && fw4.default_option("fullcone6")): %}
++		{%+ include("zone-fullcone.uc", { fw4, zone, family: 6, direction: "dstnat" }) %}
++{%   endif %}
+ {%   fw4.includes('chain-append', `dstnat_${zone.name}`) %}
+ 	}
+ 
+@@ -340,20 +346,26 @@
+ {%   for (let redirect in fw4.redirects(`srcnat_${zone.name}`)): %}
+ 		{%+ include("redirect.uc", { fw4, zone, redirect }) %}
+ {%   endfor %}
+-{%   if (zone.masq): %}
++{%   if (zone.masq && !fw4.default_option("fullcone")): %}
+ {%    for (let saddrs in zone.masq4_src_subnets): %}
+ {%     for (let daddrs in zone.masq4_dest_subnets): %}
+ 		{%+ include("zone-masq.uc", { fw4, zone, family: 4, saddrs, daddrs }) %}
+ {%     endfor %}
+ {%    endfor %}
+ {%   endif %}
+-{%   if (zone.masq6): %}
++{%   if (zone.masq6 && !fw4.default_option("fullcone6")): %}
+ {%    for (let saddrs in zone.masq6_src_subnets): %}
+ {%     for (let daddrs in zone.masq6_dest_subnets): %}
+ 		{%+ include("zone-masq.uc", { fw4, zone, family: 6, saddrs, daddrs }) %}
+ {%     endfor %}
+ {%    endfor %}
+ {%   endif %}
++{%   if (zone.masq && fw4.default_option("fullcone")): %}
++		{%+ include("zone-fullcone.uc", { fw4, zone, family: 4, direction: "srcnat" }) %}
++{%   endif %}
++{%   if (zone.masq6 && fw4.default_option("fullcone6")): %}
++		{%+ include("zone-fullcone.uc", { fw4, zone, family: 6, direction: "srcnat" }) %}
++{%   endif %}
+ {%   fw4.includes('chain-append', `srcnat_${zone.name}`) %}
+ 	}
+ 
+diff -ruN a/root/usr/share/firewall4/templates/zone-fullcone.uc mod/root/usr/share/firewall4/templates/zone-fullcone.uc
+--- a/root/usr/share/firewall4/templates/zone-fullcone.uc	1970-01-01 08:00:00.000000000 +0800
++++ b/root/usr/share/firewall4/templates/zone-fullcone.uc	2026-10-26 23:05:05.539361044 +0800
+@@ -0,0 +1,4 @@
++{# /usr/share/firewall4/templates/zone-fullcone.uc #}
++		meta nfproto {{ fw4.nfproto(family) }} fullcone comment "!fw4: Handle {{
++		zone.name
++}} {{ fw4.nfproto(family, true) }} fullcone NAT {{ direction }} traffic"
+diff -ruN a/root/usr/share/ucode/fw4.uc mod/root/usr/share/ucode/fw4.uc
+--- a/root/usr/share/ucode/fw4.uc	2026-10-26 16:37:23.000000000 +0800
++++ b/root/usr/share/ucode/fw4.uc	2026-10-26 23:05:14.554203948 +0800
+@@ -1,3 +1,5 @@
++// /usr/share/ucode/fw4.uc
++
+ const fs = require("fs");
+ const uci = require("uci");
+ const ubus = require("ubus");
+@@ -489,6 +491,25 @@
+ 	return (rc == 0);
+ }
+ 
++function nft_try_fullcone() {
++	let nft_test =
++		'add table inet fw4-fullcone-test; ' +
++		'add chain inet fw4-fullcone-test dstnat { ' +
++			'type nat hook prerouting priority -100; policy accept; ' +
++			'fullcone; ' +
++		'}; ' +
++		'add chain inet fw4-fullcone-test srcnat { ' +
++			'type nat hook postrouting priority -100; policy accept; ' +
++			'fullcone; ' +
++		'}; ';
++	let cmd = sprintf("/usr/sbin/nft -c '%s' 2>/dev/null", replace(nft_test, "'", "'\\''"));
++	let ok = system(cmd) == 0;
++	if (!ok) {
++		warn("nft_try_fullcone: cmd "+ cmd + "\n");
++	}
++	return ok;
++}
++
+ 
+ return {
+ 	read_kernel_version: function() {
+@@ -873,6 +894,18 @@
+ 			warn(`[!] ${msg}\n`);
+ 	},
+ 
++	myinfo: function(fmt, ...args) {
++		if (getenv("QUIET"))
++			return;
++
++		let msg = sprintf(fmt, ...args);
++
++		if (getenv("TTY"))
++			warn(`\033[32m${msg}\033[m\n`);
++		else
++			warn(`[I] ${msg}\n`);
++	},
++
+ 	get: function(sid, opt) {
+ 		return this.cursor.get("firewall", sid, opt);
+ 	},
+@@ -1056,6 +1089,21 @@
+ 		}
+ 	},
+ 
++	myinfo_section: function(s, msg) {
++		if (s[".name"]) {
++			if (s.name)
++				this.myinfo("Section %s (%s) %s", this.section_id(s[".name"]), s.name, msg);
++			else
++				this.myinfo("Section %s %s", this.section_id(s[".name"]), msg);
++		}
++		else {
++			if (s.name)
++				this.myinfo("ubus %s (%s) %s", s.type || "rule", s.name, msg);
++			else
++				this.myinfo("ubus %s %s", s.type || "rule", msg);
++		}
++	},
++
+ 	parse_policy: function(val) {
+ 		return this.parse_enum(val, [
+ 			"accept",
+@@ -1495,6 +1543,7 @@
+ 			"dscp",
+ 			"dnat",
+ 			"snat",
+ 			"masquerade",
++			"fullcone",
+ 			"npt",
+ 			"accept",
+@@ -1966,6 +2015,8 @@
+ 		}
+ 
+ 		let defs = this.parse_options(data, {
++			fullcone: [ "bool", "0" ],
++			fullcone6: [ "bool", "0" ],
+ 			input: [ "policy", "drop" ],
+ 			output: [ "policy", "drop" ],
+ 			forward: [ "policy", "drop" ],
+@@ -2000,6 +2051,11 @@
+ 
+ 		delete defs.syn_flood;
+ 
++		if (!nft_try_fullcone()) {
++			delete defs.fullcone;
++			warn("nft_try_fullcone failed, disable fullcone globally\n");
++		}
++
+ 		this.state.defaults = defs;
+ 	},
+ 
+@@ -2245,10 +2301,23 @@
+ 		zone.related_subnets = related_subnets;
+ 		zone.related_physdevs = related_physdevs;
+ 
+-		if (zone.masq || zone.masq6)
++		if (zone.masq) {
+ 			zone.dflags.snat = true;
++			if (this.state.defaults.fullcone) {
++				zone.dflags.dnat = true;
++				this.myinfo_section(data, "IPv4 fullcone enabled for zone '" + zone.name + "'");
++			}
++		}
++
++		if (zone.masq6) {
++			zone.dflags.snat = true;
++			if (this.state.defaults.fullcone6) {
++				zone.dflags.dnat = true;
++				this.myinfo_section(data, "IPv6 fullcone enabled for zone '" + zone.name + "'");
++			}
++		}
+ 
+-		if ((zone.auto_helper && !(zone.masq || zone.masq6)) || length(zone.helper)) {
++		if ((zone.auto_helper && !(zone.masq || zone.masq6 || this.state.defaults.fullcone || this.state.defaults.fullcone6)) || length(zone.helper)) {
+ 			zone.dflags.helper = false;
+ 
+ 			for (let helper in (length(zone.helper) ? zone.helper : this.state.helpers)) {

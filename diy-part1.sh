@@ -15,6 +15,14 @@
 # =============================================================================
 OPENCLASH_BRANCH=dev
 
+# 上游 2026-10-26 的合并把 firewall4 升到 2026.10.26，但自带的 fullcone 补丁
+# 第 8 个 hunk 仍按旧 fw4.uc 生成，会直接打失败。
+# 用仓库内校准过的补丁覆盖；上游修复该补丁后可以删掉这段。
+if [ -f "$GITHUB_WORKSPACE/patches/firewall4/001-firewall4-add-support-for-fullcone-nat.patch" ]; then
+    cp -f "$GITHUB_WORKSPACE/patches/firewall4/001-firewall4-add-support-for-fullcone-nat.patch" \
+       "$GITHUB_WORKSPACE/openwrt/package/network/config/firewall4/patches/001-firewall4-add-support-for-fullcone-nat.patch"
+fi
+
 # =============================================================================
 # 源码获取辅助函数
 # cache_clone：从 GitHub 克隆；仅在明确启用时回退至本地缓存。
