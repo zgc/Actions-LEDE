@@ -172,14 +172,19 @@ if ! GITHUB_WORKSPACE="$GITHUB_WORKSPACE" BUILD_CACHE_DIR="$BUILD_CACHE_DIR" "$G
   exit 1
 fi
 feeds_updated=0
-for attempt in 1 2 3; do
-  if ./scripts/feeds update -f -a && verify_configured_feed_heads; then
-    feeds_updated=1
-    break
-  fi
-  echo "⚠️ feeds update failed (attempt $attempt/3), retrying..."
-  sleep $((attempt * 3))
-done
+if [ "${SKIP_FEEDS_UPDATE:-0}" = "1" ]; then
+  echo "⚠️ feeds update skipped by SKIP_FEEDS_UPDATE=1"
+  feeds_updated=1
+else
+  for attempt in 1 2 3; do
+    if ./scripts/feeds update -f -a && verify_configured_feed_heads; then
+      feeds_updated=1
+      break
+    fi
+    echo "⚠️ feeds update failed (attempt $attempt/3), retrying..."
+    sleep $((attempt * 3))
+  done
+fi
 [ "$feeds_updated" -eq 1 ] || { echo "❌ feeds update failed after 3 attempts"; exit 1; }
 "$GITHUB_WORKSPACE/scripts/build/install_selected_feeds.sh" \
   "$GITHUB_WORKSPACE/openwrt" "$GITHUB_WORKSPACE/$CONFIG_FILE" || {
