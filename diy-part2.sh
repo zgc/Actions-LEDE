@@ -41,6 +41,19 @@ download_required() {
 	}
 }
 
+download_cached() {
+	local url="$1" destination="$2" label="$3" cached
+	if [ -n "${OPENCLASH_DATA_CACHE:-}" ]; then
+		cached="$OPENCLASH_DATA_CACHE/$(basename "$destination")"
+		if [ -s "$cached" ]; then
+			install -m 0644 "$cached" "$destination"
+			echo "✅ $label: using local cache $cached"
+			return 0
+		fi
+	fi
+	download_required "$url" "$destination" "$label"
+}
+
 install_mihomo_latest() {
 	local destination="$1" version asset archive
 	version="$(curl --fail --show-error --location --retry 5 --retry-all-errors --retry-delay 2 --connect-timeout 20 https://api.github.com/repos/MetaCubeX/mihomo/releases/latest 2>/dev/null | grep -E 'tag_name' | grep -E 'v[0-9.]+' -o 2>/dev/null)"
@@ -811,9 +824,9 @@ else
 	install_mihomo_latest "$CLASH_CORE_TMP" || { echo "❌ Mihomo core download failed"; exit 1; }
 	rm -rf "$CLASH_CORE_TMP"
 fi
-download_required "https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download/geoip.dat" package/emortal/luci-app-openclash/root/etc/openclash/GeoIP.dat "GeoIP data"
-download_required "https://github.com/xishang0128/geoip/releases/latest/download/GeoLite2-ASN.mmdb" package/emortal/luci-app-openclash/root/etc/openclash/ASN.mmdb "ASN data"
-download_required "https://github.com/vernesong/mihomo/releases/download/LightGBM-Model/Model-large.bin" package/emortal/luci-app-openclash/root/etc/openclash/Model.bin "Mihomo model"
+download_cached "https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download/geoip.dat" package/emortal/luci-app-openclash/root/etc/openclash/GeoIP.dat "GeoIP data"
+download_cached "https://github.com/xishang0128/geoip/releases/latest/download/GeoLite2-ASN.mmdb" package/emortal/luci-app-openclash/root/etc/openclash/ASN.mmdb "ASN data"
+download_cached "https://github.com/vernesong/mihomo/releases/download/LightGBM-Model/Model-large.bin" package/emortal/luci-app-openclash/root/etc/openclash/Model.bin "Mihomo model"
 
 # =============================================================================
 # SmartDNS 默认配置
