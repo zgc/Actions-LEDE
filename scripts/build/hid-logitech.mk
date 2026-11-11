@@ -1,7 +1,7 @@
 define KernelPackage/hid-logitech
   SUBMENU:=Input modules
   TITLE:=Logitech HID++ receiver support
-  DEPENDS:=+kmod-hid +kmod-hid-generic
+  DEPENDS:=+kmod-hid +kmod-hid-generic +kmod-usb-hid
   KCONFIG:=CONFIG_HID_LOGITECH=m CONFIG_HID_LOGITECH_DJ=m CONFIG_HID_LOGITECH_HIDPP=m
   FILES:= \
 	$(LINUX_DIR)/drivers/hid/hid-logitech.ko \
