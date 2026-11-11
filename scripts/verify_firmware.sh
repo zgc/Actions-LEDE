@@ -69,7 +69,12 @@ verify_squashfs() {
 	for luci_asset in luci.js ui.js; do
 		[ -s "$image_rootfs/www/luci-static/resources/$luci_asset" ] || fail "verified SquashFS is missing LuCI asset: $luci_asset"
 	done
-	echo "✅ firmware SquashFS fully extracted and LuCI assets verified"
+	for required_file in etc/config/tailscale etc/tailscale/tailscaled.state etc/uci-defaults/95-tailscale-setup; do
+		[ -s "$image_rootfs/$required_file" ] || fail "verified SquashFS is missing: $required_file"
+	done
+	[ -L "$image_rootfs/etc/rc.d/S80tailscale" ] || fail "verified SquashFS is missing rc.d symlink: S80tailscale"
+	grep -q "list advertise_routes" "$image_rootfs/etc/config/tailscale" || fail "tailscale UCI is missing advertise_routes"
+	echo "✅ firmware SquashFS fully extracted, LuCI and Tailscale assets verified"
 }
 
 [ -d "$OPENWRT_DIR" ] || fail "OpenWrt directory is missing: $OPENWRT_DIR"
